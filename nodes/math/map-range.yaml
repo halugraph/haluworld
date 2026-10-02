@@ -1,0 +1,33 @@
+description: Maps a number from one range to another
+category: Math
+color: "#66bb6a"
+icon: straighten
+function: |
+  Rescales values: a 0..1 slider to 200..2000 Hz, mouse x to hue 0..360, audio level to size.
+approach: |
+  `out = out-min + (value - in-min) / (in-max - in-min) * (out-max - out-min)` via `mapRange` from
+  hlg-runtime.ts. Defaults: in 0..1 → out 0..1; ranges may be given by the action ("0..1 to
+  50..5000 Hz, exponential") instead of wires. Clamp to the output range by default (the action may
+  say "unclamped"). Curves from the action: "exponential"/"logarithmic" (for frequencies:
+  `outMin * (outMax / outMin) ** t`), "ease-in", "inverted" (swap out bounds).
+  Input handlers for hyphenated ports need quoted keys: `inputs: { value(v) {…}, 'in-min'(v) {…} }`.
+deliverables: |
+  - `value`: the mapped number, emitted on every `value` input and when a bound changes (if a value
+    is known).
+preconditions: |
+  - `value` must be wired (error otherwise).
+  - `in-min` ≠ `in-max` (equal bounds → output `out-min` and warn).
+inputs:
+  - name: value
+    description: Number to map
+  - name: in-min
+    description: Input range start (default 0)
+  - name: in-max
+    description: Input range end (default 1)
+  - name: out-min
+    description: Output range start (default 0)
+  - name: out-max
+    description: Output range end (default 1)
+outputs:
+  - name: value
+    description: The mapped number

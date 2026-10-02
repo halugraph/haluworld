@@ -1,0 +1,42 @@
+description: ADSR envelope triggered by a gate
+category: Audio
+color: "#7e57c2"
+icon: timeline
+function: |
+  Shapes a note over time: attack, decay, sustain, release. Driven by a gate (key held = on), it
+  outputs a 0..1 control signal that opens a VCA (audio/gain) or sweeps a filter.
+approach: |
+  A Web Audio `ConstantSourceNode` (offset 0, started at creation) whose `offset` AudioParam is
+  automated; that node is emitted on `envelope`, so it can be connected straight into AudioParams
+  (`gain.gain`, `filter.frequency` via a scaling GainNode).
+  - Gate on (true, or a number > 0 — use it as peak level when it is a velocity 0..1):
+    `cancelAndHoldAtTime(t)` (fallback: cancelScheduledValues + setValueAtTime(current)), then
+    `linearRampToValueAtTime(peak, t + attack)`, then `setTargetAtTime(sustain * peak, t + attack,
+    decay / 4)`.
+  - Gate off (false/0): cancel-and-hold, then `setTargetAtTime(0, t, release / 4)`.
+  - Retriggering while a note is sounding restarts the attack from the current level (no clicks).
+  - Times in seconds (defaults: attack 0.01, decay 0.2, sustain 0.7 (level 0..1), release 0.4);
+    accept milliseconds when the action says "ms" or values > 20 clearly are ms.
+deliverables: |
+  - `envelope`: an AudioNode emitting the 0..1 envelope at audio rate, emitted once at creation.
+  - Sample-accurate, click-free ADSR that follows gate on/off exactly.
+preconditions: |
+  - `gate` must be wired (keyboard/sequencer/midi `gate`, a button's `pressed`, a toggle) — without it
+    the envelope stays at 0 and whatever it controls stays silent (error when `envelope` drives a
+    gain that feeds the dac).
+  - `envelope` should be wired into something that accepts a modulating AudioNode (audio/gain `gain`,
+    audio/filter `cutoff`); wiring it into a UI label or `left/right` of a dac is a mistake (warning).
+inputs:
+  - name: gate
+    description: Boolean (or velocity number); true/>0 starts the note, false/0 releases it
+  - name: attack
+    description: Attack time in seconds (default 0.01)
+  - name: decay
+    description: Decay time in seconds (default 0.2)
+  - name: sustain
+    description: Sustain level 0..1 (default 0.7)
+  - name: release
+    description: Release time in seconds (default 0.4)
+outputs:
+  - name: envelope
+    description: Envelope control signal 0..1 (AudioNode, connect to an AudioParam)

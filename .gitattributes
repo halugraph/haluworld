@@ -1,0 +1,52 @@
+# Line endings (halugraph, spec §10): every text file of this project is LF — in git AND in the working
+# tree, on every platform, also on Windows with core.autocrlf=true — so halugraph, the agent's tools and
+# git always see the same bytes, and a commit never rewrites every line.
+* text=auto eol=lf
+
+# cmd.exe needs CRLF in batch files (tools/cmd/halugraph-client.cmd). Any letter case: git matches patterns
+# case-sensitively on Linux / macOS but not on Windows, so SETUP.BAT would otherwise differ between them.
+*.[cC][mM][dD] text eol=crlf
+*.[bB][aA][tT] text eol=crlf
+
+# Attachments are content-addressed (the file name starts with a hash of the bytes): never convert them,
+# whatever their type — a converted line ending would no longer match the name (spec §12).
+assets/** binary
+assets/README.md text eol=lf
+agents/compiles/*/input/assets/** binary
+agents/compiles/*/app/public/assets/** binary
+
+# Binary files anywhere else: never converted, never diffed or merged as text.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.avif binary
+*.bmp binary
+*.ico binary
+*.tif binary
+*.tiff binary
+*.psd binary
+*.wav binary
+*.mp3 binary
+*.ogg binary
+*.oga binary
+*.flac binary
+*.aac binary
+*.m4a binary
+*.opus binary
+*.mid binary
+*.midi binary
+*.mp4 binary
+*.webm binary
+*.mov binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.glb binary
+*.bin binary
+*.wasm binary

@@ -1,0 +1,31 @@
+description: Metronome — sends a bang at a regular interval
+category: Time
+color: "#8d6e63"
+icon: av_timer
+function: |
+  A steady pulse (like `metro` in Max/Pd): drives sequencers, animations, random changes, polling.
+approach: |
+  `interval` in milliseconds (default 500; accept "120 bpm" strings or the action: "16th notes at 120
+  BPM" → 125 ms). A drift-free scheduler: compute the next tick time from the start time
+  (`start + n * interval` via `performance.now()`) and `setTimeout` to it, instead of chaining fixed
+  timeouts. When it drives audio (a sequencer feeding envelopes), tighter timing comes from
+  scheduling against `audioContext.currentTime` with a short look-ahead — use that when the action
+  cares about musical precision.
+  `on`: boolean (default true unless the action says it starts stopped); a bang toggles. Turning on
+  ticks immediately, then every interval. Interval changes apply from the next tick.
+  Emit with `ctx.bang('tick')`. Stop the timer in `dispose()`.
+deliverables: |
+  - `tick`: a bang every interval while on, without cumulative drift (tick n happens at start + n ×
+    interval, ±a few ms).
+  - Stops immediately when `on` becomes false; restarting ticks at once.
+preconditions: |
+  - `tick` must be wired (warning otherwise).
+  - `interval` must be > 0; values under 10 ms are clamped to 10 ms (warning).
+inputs:
+  - name: interval
+    description: Milliseconds between ticks (default 500)
+  - name: "on"
+    description: Boolean run/stop (default true); a bang toggles
+outputs:
+  - name: tick
+    description: A bang on every beat

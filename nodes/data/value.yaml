@@ -1,0 +1,25 @@
+description: A constant value defined in the action
+category: Data
+color: "#26a69a"
+icon: data_object
+function: |
+  Holds a fixed value — a number, a text, a list of notes, a colour, a JSON object — written in the
+  action, and sends it to whatever needs it.
+approach: |
+  Decide the value at compile time from the action and hard-code it in the module: "440" → 440,
+  "[60, 64, 67]" → an array, "Hello world" → the string, "#ff00aa" → the colour string,
+  `{ "a": 1 }` → the object; descriptive actions ("a C major chord as MIDI notes") → compute the
+  literal (`[60, 64, 67]`). Emit it once at creation (replay delivers it to every wire).
+deliverables: |
+  - `value`: the constant, emitted once at creation, with the JS type the consumers expect (number,
+    string, array, object — never a string that merely looks like a number).
+  - No input handlers; nothing changes at runtime.
+preconditions: |
+  - The action must define the value; an empty action is an error (nothing to send).
+  - `value` should be wired (info otherwise).
+  - If the consumers disagree on the type (a number into one input, text into another), pick the type
+    matching the action and note the assumption in plan.md.
+inputs: []
+outputs:
+  - name: value
+    description: The constant value

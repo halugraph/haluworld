@@ -1,0 +1,52 @@
+description: The application itself — everything wired into content becomes the page
+category: Core
+color: "#f9a825"
+icon: web
+function: |
+  The root of the compiled app. Its `action` describes the WHOLE application: what it is, its mood,
+  layout, colours, typography and anything global (full-screen canvas, dark theme, "works on phones").
+  Everything wired into `content` becomes the page, in wire order. A graph needs exactly one output
+  node to be compiled as an app; graphs used as subgraphs have none.
+approach: |
+  Module `src/nodes/<graph>/<id>.ts` creates a root element (`<main class="hlg-output">`), keeps
+  incoming `content` values in an array indexed by `info.slot` (the wire order) and re-renders with
+  `root.replaceChildren(...)` whenever one arrives. It mounts the root with `ctx.app.mount(root)` in
+  `start()` and unmounts in `dispose()`.
+  - `content` values: DOM elements are placed as-is; strings/numbers become `<p class="hlg-text">`.
+    Canvases/videos that should fill the screen get `hlg-canvas--full` when the action says so.
+  - `title` sets `document.title` (and a visible heading only if the action asks for one).
+  - `style` accepts CSS text (inserted as a `<style>` element) or an object of theme variables set
+    on `<html>`: `{ accent: '#ff0', bg: '#000' }` → `--hlg-accent`, `--hlg-bg` (the variables of
+    style.css); keys starting with `--` are used as they are. Remove both in `dispose()`.
+  The reference attachments of this node (sketches, mock-ups, screenshots of apps the artist likes) are
+  the visual design brief: look at every one before writing the page and follow its layout,
+  proportions, colours and typography; the action and the attachment descriptions win where they
+  differ, and plan.md says how each picture was read. They are never shipped in the app.
+  Layout comes from the action: default is a centred single column (`hlg-output--centered` when there
+  are few elements, a responsive `hlg-grid` when there are many). Use the variables in style.css
+  (`--hlg-accent`, `--hlg-bg`…) to theme instead of hard-coding colours all over the node modules.
+deliverables: |
+  - A mounted page containing every `content` element in wire order, laid out as the action says.
+  - `document.title` set from `title` (or from the action / graph description when unwired).
+  - Global look & feel from the action and `style`, responsive down to 360 px wide, readable in dark
+    and light mode, no horizontal scrolling unless the action asks for it.
+  - When the graph has no content at all: a tasteful placeholder page that shows the title and one
+    sentence taken from the action, so the build is never blank.
+preconditions: |
+  - Exactly one output node per compiled graph (none in graphs used as subgraphs).
+  - `content` should receive DOM elements (the `element` outputs of ui/*, media/*, graphics/* nodes).
+    Wiring non-visual values (numbers, audio) into `content` is a mistake unless the action explains
+    how to show them — report it as a warning and render a readable fallback.
+  - Nodes that make sound or visuals without an element (audio/dac, input/*) do not need to be wired
+    here; they still run because the whole graph is instantiated.
+inputs:
+  - name: content
+    description: DOM elements that make up the page (fan-in; wire order = page order)
+  - name: title
+    description: Page title text (document.title)
+  - name: style
+    description: CSS text, or theme variables such as { accent, bg } (→ --hlg-accent, --hlg-bg)
+outputs: []
+attachments:
+  role: reference
+  hint: App mock-ups, sketches and screenshots of the look you want

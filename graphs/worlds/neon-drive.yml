@@ -1,0 +1,265 @@
+description: "World 1 — Neon Drive: synthwave highway, driving bass and drums"
+nodes:
+  - id: about
+    type: comment
+    action: "NEON DRIVE — an endless synthwave night drive. A 112 BPM drum machine (freeform) and an octave bassline (pluck subgraph) drive a GPU shader: the grid pulses on every kick, pointer x steers, pointer y opens the bass filter, a tap fires a snare-roll fill and a neon flash."
+    position: { x: 40, y: 40 }
+    size: { width: 620, height: 160 }
+    inputs: []
+    outputs: []
+  - id: active_in
+    type: graph-input
+    action: true while this world is on screen (the director sets it)
+    position: { x: 40, y: 240 }
+    inputs: []
+    outputs:
+      - name: active
+        connection: on.a
+  - id: x_in
+    type: graph-input
+    action: "Pointer x 0..1 (the real mouse, or the ghost pointer in attract mode)"
+    position: { x: 40, y: 460 }
+    inputs: []
+    outputs:
+      - name: x
+        connection: shader.params
+  - id: y_in
+    type: graph-input
+    action: "Pointer y 0..1, 0 = top"
+    position: { x: 40, y: 680 }
+    inputs: []
+    outputs:
+      - name: "y"
+        connection: bass.brightness
+  - id: tap_in
+    type: graph-input
+    action: A bang on every click / tap / space bar (or a ghost tap in attract mode)
+    position: { x: 40, y: 900 }
+    inputs: []
+    outputs:
+      - name: tap
+        connection:
+          - drums.fill
+          - shader.params
+  - id: on
+    type: math/math
+    action: "active ? 1 : 0"
+    position: { x: 40, y: 1120 }
+    inputs:
+      - name: a
+        connection: active_in.active
+      - name: b
+        connection: ""
+      - name: c
+        connection: ""
+    outputs:
+      - name: result
+        connection: fade.target
+  - id: fade
+    type: time/tween
+    action: "1.2 s easeInOutSine fade between 0 and 1"
+    position: { x: 420, y: 1120 }
+    inputs:
+      - name: target
+        connection: on.result
+      - name: duration
+        connection: ""
+      - name: easing
+        connection: ""
+    outputs:
+      - name: value
+        connection:
+          - awake.a
+          - shader.params
+          - fader.gain
+  - id: awake
+    type: math/math
+    action: "a > 0.001 (true while the world is visible or fading)"
+    position: { x: 800, y: 1120 }
+    inputs:
+      - name: a
+        connection: fade.value
+      - name: b
+        connection: ""
+      - name: c
+        connection: ""
+    outputs:
+      - name: result
+        connection:
+          - clock.running
+          - metro.on
+  - id: clock
+    type: time/clock
+    action: Drives the shader; pauses while the world is hidden
+    position: { x: 420, y: 240 }
+    inputs:
+      - name: running
+        connection: awake.result
+    outputs:
+      - name: time
+        connection: shader.time
+      - name: delta
+        connection: ""
+      - name: frame
+        connection: ""
+  - id: metro
+    type: time/metro
+    action: "16th notes at 112 BPM (0.134 s); runs only while awake"
+    position: { x: 420, y: 680 }
+    inputs:
+      - name: interval
+        connection: ""
+      - name: "on"
+        connection: awake.result
+    outputs:
+      - name: tick
+        connection:
+          - seq.clock
+          - drums.tick
+  - id: seq
+    type: audio/sequencer
+    action: "64-step octave-pumping bassline (four bars of 16ths): bar 1 alternates A1/A2, bar 2 F1/F2, bar 3 C2/C3, bar 4 G1/G2"
+    position: { x: 800, y: 680 }
+    inputs:
+      - name: clock
+        connection: metro.tick
+      - name: steps
+        connection: ""
+    outputs:
+      - name: note
+        connection: mtof.a
+      - name: gate
+        connection: bass.gate
+  - id: mtof
+    type: math/math
+    action: MIDI note a → Hz (mtof)
+    position: { x: 1180, y: 680 }
+    inputs:
+      - name: a
+        connection: seq.note
+      - name: b
+        connection: ""
+      - name: c
+        connection: ""
+    outputs:
+      - name: result
+        connection: bass.frequency
+  - id: bass
+    type: subgraph
+    graph: worlds/lib/pluck
+    action: Bass voice; pointer y sets brightness (top = bright)
+    position: { x: 1560, y: 680 }
+    inputs:
+      - name: frequency
+        connection: mtof.result
+      - name: gate
+        connection: seq.gate
+      - name: brightness
+        connection: y_in.y
+    outputs:
+      - name: signal
+        connection: mix.a
+  - id: drums
+    type: freeform
+    action: "Classic 80s drum machine: kick on every beat (steps 0, 4, 8, 12 of each 16), clap on beats 2 and 4, closed hi-hat on every off-16th, open hat on the \"and\" of 4. A tap on fill plays a one-beat snare roll ending in a crash."
+    function: "A synthesized drum machine: counts incoming 16th-note ticks and plays a fixed groove with Web Audio, emitting its audio and a kick pulse for visuals."
+    approach: "Pure Web Audio, no samples. Kick: sine oscillator with a fast pitch drop 150→45 Hz over 0.12 s and a 0.4 s amplitude decay. Clap/snare: band-passed white-noise bursts (1.2 kHz, 3 quick retriggers). Hats: high-passed noise (8 kHz), 0.04 s closed / 0.25 s open. Schedule each hit at ctx currentTime on tick; keep a 16-step counter. pulse follows the kick: set to 1 on each kick and decay exponentially (half-life 0.12 s) in ctx.onFrame, emitting every frame while > 0.001. On fill: schedule 8 snare hits over the next beat with rising velocity, then a crash (long high-passed noise)."
+    deliverables: "signal: one AudioNode (the drum bus, output gain 0.7). pulse: number 0..1 every frame. The groove stays locked to the ticks; the fill never stops the groove."
+    preconditions: tick must be wired (no ticks = silence). Pre-build a 2 s noise AudioBuffer once and reuse it; never allocate per hit beyond the short-lived source nodes.
+    position: { x: 800, y: 900 }
+    inputs:
+      - name: tick
+        connection: metro.tick
+        description: Bang on every 16th note (from the metro)
+      - name: fill
+        connection: tap_in.tap
+        description: "Bang: play a snare-roll fill + crash"
+    outputs:
+      - name: signal
+        connection: mix.b
+        description: The drum mix (AudioNode)
+      - name: pulse
+        connection: shader.params
+        description: "Kick envelope 0..1, updated every frame (number) — for visuals"
+  - id: mix
+    type: audio/mixer
+    action: "Bass 0.8, drums 0.9"
+    position: { x: 1180, y: 900 }
+    inputs:
+      - name: a
+        connection: bass.signal
+      - name: b
+        connection: drums.signal
+      - name: c
+        connection: ""
+      - name: d
+        connection: ""
+    outputs:
+      - name: signal
+        connection: echo.signal
+  - id: echo
+    type: audio/delay
+    action: "Dotted-eighth slapback 0.4 s, feedback 0.3, mix 0.2"
+    position: { x: 1560, y: 900 }
+    inputs:
+      - name: signal
+        connection: mix.signal
+      - name: time
+        connection: ""
+      - name: feedback
+        connection: ""
+      - name: mix
+        connection: ""
+    outputs:
+      - name: signal
+        connection: fader.signal
+  - id: shader
+    type: graphics/shader
+    action: "Synthwave: a huge striped retro sun (hot pink → orange gradient, horizontal cut lines) sinking behind purple wireframe mountains, a perspective neon grid (magenta lines on near-black) scrolling towards the viewer, stars, and a light haze at the horizon. u_param0 = pointer x: steers — banks the horizon ±6° and shifts the vanishing point. u_param1 = kick pulse 0..1: grid lines flare brighter and the sun breathes. u_param2 = world fade 0..1: multiply the final colour (fade to black). u_param3 = tap bang: on each tap flash a cyan scanline sweep that decays in 0.4 s (track the time of the last tap in the module). Add subtle CRT scanlines and a vignette."
+    position: { x: 1940, y: 240 }
+    inputs:
+      - name: time
+        connection: clock.time
+      - name: resolution
+        connection: ""
+      - name: texture
+        connection: ""
+      - name: params
+        connection:
+          - x_in.x
+          - drums.pulse
+          - fade.value
+          - tap_in.tap
+    outputs:
+      - name: texture
+        connection: ""
+      - name: element
+        connection: element_out.element
+  - id: fader
+    type: audio/gain
+    action: Fades the whole world in and out with the crossfade
+    position: { x: 1940, y: 900 }
+    inputs:
+      - name: signal
+        connection: echo.signal
+      - name: gain
+        connection: fade.value
+    outputs:
+      - name: signal
+        connection: signal_out.signal
+  - id: signal_out
+    type: graph-output
+    action: "The world's sound"
+    position: { x: 2320, y: 900 }
+    inputs:
+      - name: signal
+        connection: fader.signal
+    outputs: []
+  - id: element_out
+    type: graph-output
+    action: "The world's full-screen visual"
+    position: { x: 2320, y: 1340 }
+    inputs:
+      - name: element
+        connection: shader.element
+    outputs: []

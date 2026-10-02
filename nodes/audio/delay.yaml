@@ -1,0 +1,34 @@
+description: Echo / delay effect with feedback and wet/dry mix
+category: Audio
+color: "#7e57c2"
+icon: repeat
+function: |
+  Repeats the incoming sound after a delay — echoes, slapback, dub feedback, chorus-like thickening at
+  short times.
+approach: |
+  Web Audio graph on the shared context: input GainNode → dry GainNode → output, and input →
+  `DelayNode(maxDelayTime 5)` → wet GainNode → output, with a feedback loop DelayNode → feedback
+  GainNode → DelayNode. Put a lowpass BiquadFilter (≈ 5 kHz) inside the feedback loop so repeats get
+  darker ("tape"-like; skip when the action wants clean digital echoes).
+  - `time`: seconds (default 0.3); accept beat fractions from the action ("1/8 at 120 BPM" → 0.25 s).
+    Changes use `setTargetAtTime` (pitchy glide is expected with delays).
+  - `feedback`: 0..0.95 (default 0.4) — never ≥ 1 (runaway).
+  - `mix`: 0 dry … 1 wet (default 0.35): equal-power crossfade `dry = cos(mix·π/2)`, `wet = sin(mix·π/2)`.
+deliverables: |
+  - `signal`: the effect output (AudioNode), emitted once at creation.
+  - Musical echoes that decay, no clicks when parameters move, no runaway feedback.
+preconditions: |
+  - `signal` input must receive an AudioNode and the output should reach a dac/analyser.
+  - `feedback` values ≥ 1 are clamped to 0.95 with a warning.
+inputs:
+  - name: signal
+    description: Audio signal in (AudioNode, fan-in sums)
+  - name: time
+    description: Delay time in seconds (default 0.3)
+  - name: feedback
+    description: Amount fed back, 0..0.95 (default 0.4)
+  - name: mix
+    description: Wet/dry balance 0..1 (default 0.35)
+outputs:
+  - name: signal
+    description: Dry + echoed signal (AudioNode)

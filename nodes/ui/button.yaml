@@ -1,0 +1,39 @@
+description: A clickable button that sends a bang when clicked
+category: UI
+color: "#42a5f5"
+icon: smart_button
+function: |
+  A push button the user clicks or taps. Sends an event on `clicked` and reports whether it is held
+  down on `pressed` (useful for "hold to play" or momentary effects).
+approach: |
+  A `<button type="button" class="hlg-button">` created with `h()`. Caption: the `label` input, else the
+  text the action names (e.g. "Start", "Randomize"), else the node label/id in Title Case.
+  - `click` → `ctx.bang('clicked')` (keyboard Enter/Space trigger click natively).
+  - `pointerdown` → emit `pressed` true; `pointerup`/`pointerleave`/`pointercancel` → false (emit only
+    on change). Emit `pressed` false once at creation.
+  - `enabled` false/0/"false" → `el.disabled = true`.
+  Use `hlg-button--primary` for the main call to action and `hlg-button--big` when the action says the
+  button is prominent. Use `ctx.listen` for listeners so they are removed on dispose.
+deliverables: |
+  - `element`: the HTMLButtonElement, emitted once at creation.
+  - `clicked`: a bang (`ctx.bang`) per click — never replayed to late wires.
+  - `pressed`: boolean, true while held.
+  - A button that is keyboard accessible, has a visible focus ring and a clear caption.
+preconditions: |
+  - `element` must reach the page (output `content`, or a ui/layout / ui/panel `children`) or the user
+    cannot click it — report a warning if it is unwired.
+  - `clicked` should drive something (a counter, a trigger, a tween…); a button with nothing wired to
+    `clicked`/`pressed` is decoration — mention it as info.
+  - Clicking also counts as the user gesture that unlocks audio (the runtime handles that globally).
+inputs:
+  - name: label
+    description: Caption text; defaults to the text named in the action
+  - name: enabled
+    description: Boolean; false disables the button (default true)
+outputs:
+  - name: element
+    description: The button DOM element — wire into output.content or a layout
+  - name: clicked
+    description: Bang on every click
+  - name: pressed
+    description: Boolean, true while the button is held down

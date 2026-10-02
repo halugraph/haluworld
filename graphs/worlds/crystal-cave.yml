@@ -1,0 +1,436 @@
+description: "World 4 — Crystal Cave: a 3D crystal that sings, glows and shatters"
+nodes:
+  - id: about
+    type: comment
+    action: "CRYSTAL CAVE — three.js. A giant iridescent crystal, an orbiting ring of shards and a dark geode cave. A bell arpeggio (pluck → space-fx) makes the crystal pulse with the music level; the pointer orbits the camera; a tap strikes a deep gong and shatters the shard ring outward."
+    position: { x: 40, y: 40 }
+    size: { width: 620, height: 160 }
+    inputs: []
+    outputs: []
+  - id: active_in
+    type: graph-input
+    action: true while this world is on screen (the director sets it)
+    position: { x: 40, y: 240 }
+    inputs: []
+    outputs:
+      - name: active
+        connection: on.a
+  - id: x_in
+    type: graph-input
+    action: "Pointer x 0..1 (the real mouse, or the ghost pointer in attract mode)"
+    position: { x: 40, y: 460 }
+    inputs: []
+    outputs:
+      - name: x
+        connection: sx.value
+  - id: y_in
+    type: graph-input
+    action: "Pointer y 0..1, 0 = top"
+    position: { x: 40, y: 680 }
+    inputs: []
+    outputs:
+      - name: "y"
+        connection: sy.value
+  - id: tap_in
+    type: graph-input
+    action: A bang on every click / tap / space bar (or a ghost tap in attract mode)
+    position: { x: 40, y: 900 }
+    inputs: []
+    outputs:
+      - name: tap
+        connection:
+          - gong.gate
+          - shards.shatter
+  - id: on
+    type: math/math
+    action: "active ? 1 : 0"
+    position: { x: 40, y: 1120 }
+    inputs:
+      - name: a
+        connection: active_in.active
+      - name: b
+        connection: ""
+      - name: c
+        connection: ""
+    outputs:
+      - name: result
+        connection: fade.target
+  - id: fade
+    type: time/tween
+    action: "1.2 s easeInOutSine fade between 0 and 1"
+    position: { x: 420, y: 1120 }
+    inputs:
+      - name: target
+        connection: on.result
+      - name: duration
+        connection: ""
+      - name: easing
+        connection: ""
+    outputs:
+      - name: value
+        connection:
+          - awake.a
+          - scene.fade
+          - fader.gain
+  - id: awake
+    type: math/math
+    action: "a > 0.001 (true while the world is visible or fading)"
+    position: { x: 800, y: 1120 }
+    inputs:
+      - name: a
+        connection: fade.value
+      - name: b
+        connection: ""
+      - name: c
+        connection: ""
+    outputs:
+      - name: result
+        connection:
+          - clock.running
+          - metro.on
+  - id: clock
+    type: time/clock
+    action: Drives the rotations; pauses while hidden
+    position: { x: 420, y: 240 }
+    inputs:
+      - name: running
+        connection: awake.result
+    outputs:
+      - name: time
+        connection:
+          - spin.a
+          - orbit.a
+      - name: delta
+        connection: ""
+      - name: frame
+        connection: ""
+  - id: spin
+    type: math/math
+    action: "time a × 0.25 → rotation [0, a, 0.15] (radians)"
+    position: { x: 800, y: 240 }
+    inputs:
+      - name: a
+        connection: clock.time
+      - name: b
+        connection: ""
+      - name: c
+        connection: ""
+    outputs:
+      - name: result
+        connection: crystal.rotation
+  - id: orbit
+    type: math/math
+    action: "time a × −0.6 → rotation [0.3, a, 0]"
+    position: { x: 800, y: 460 }
+    inputs:
+      - name: a
+        connection: clock.time
+      - name: b
+        connection: ""
+      - name: c
+        connection: ""
+    outputs:
+      - name: result
+        connection: shards.rotation
+  - id: sx
+    type: math/smooth
+    action: "Smooth pointer x, 0.92"
+    position: { x: 420, y: 460 }
+    inputs:
+      - name: value
+        connection: x_in.x
+      - name: amount
+        connection: ""
+    outputs:
+      - name: value
+        connection: cam.a
+  - id: sy
+    type: math/smooth
+    action: "Smooth pointer y, 0.92"
+    position: { x: 420, y: 680 }
+    inputs:
+      - name: value
+        connection: y_in.y
+      - name: amount
+        connection: ""
+    outputs:
+      - name: value
+        connection: cam.b
+  - id: cam
+    type: math/math
+    action: "Orbit camera from smoothed pointer: angle = (a − 0.5) × 2.4 rad → { position: [sin(angle) × 7, 0.6 + (1 − b) × 3, cos(angle) × 7], lookAt: [0, 0.4, 0], fov: 55 }"
+    position: { x: 800, y: 680 }
+    inputs:
+      - name: a
+        connection: sx.value
+      - name: b
+        connection: sy.value
+      - name: c
+        connection: ""
+    outputs:
+      - name: result
+        connection: scene.camera
+  - id: crystal
+    type: graphics/mesh
+    action: "The heart crystal: a tall elongated octahedron-like crystal (icosahedron stretched ×2.2 in y, flat shading), MeshPhysicalMaterial with iridescence 1, transmission 0.6, roughness 0.1, emissive violet whose intensity follows glow; scale = 1 + glow × 0.35"
+    position: { x: 1180, y: 240 }
+    inputs:
+      - name: geometry
+        connection: ""
+      - name: material
+        connection: ""
+      - name: position
+        connection: ""
+      - name: rotation
+        connection: spin.result
+      - name: glow
+        connection: glow.value
+        description: "Music level 0..1 (smoothed): emissive intensity and scale pulse"
+    outputs:
+      - name: object
+        connection: scene.objects
+  - id: shards
+    type: graphics/mesh
+    action: "A ring of 24 small octahedron shards (InstancedMesh, radius 2.6, random tilts, cyan-to-magenta per-instance colours, emissive). On a shatter bang the ring radius jumps to 5 with random spin, then eases back to 2.6 over 1.5 s"
+    position: { x: 1180, y: 460 }
+    inputs:
+      - name: geometry
+        connection: ""
+      - name: material
+        connection: ""
+      - name: position
+        connection: ""
+      - name: rotation
+        connection: orbit.result
+      - name: shatter
+        connection: tap_in.tap
+        description: "Bang: burst the ring outward, then reassemble"
+    outputs:
+      - name: object
+        connection: scene.objects
+  - id: geode
+    type: graphics/mesh
+    action: "The cave: a large icosahedron (radius 14, detail 2, vertices jittered ±1 for rock), rendered BackSide, flat shaded, very dark purple with faint emissive speckles; it does not move"
+    position: { x: 1180, y: 680 }
+    inputs:
+      - name: geometry
+        connection: ""
+      - name: material
+        connection: ""
+      - name: position
+        connection: ""
+      - name: rotation
+        connection: ""
+    outputs:
+      - name: object
+        connection: scene.objects
+  - id: scene
+    type: graphics/scene-3d
+    action: "Dark crystal cave: black-violet fog (density 0.06), three coloured point lights (violet, cyan, magenta) slowly circling the crystal, their intensity following glow; ACES tone mapping and UnrealBloomPass bloom (strength 0.9 + glow). Canvas opacity = fade."
+    position: { x: 1560, y: 460 }
+    inputs:
+      - name: objects
+        connection:
+          - crystal.object
+          - shards.object
+          - geode.object
+      - name: camera
+        connection: cam.result
+      - name: glow
+        connection: glow.value
+        description: "Music level 0..1 (smoothed): lights and bloom"
+      - name: fade
+        connection: fade.value
+        description: "World fade 0..1: canvas opacity"
+    outputs:
+      - name: element
+        connection: element_out.element
+  - id: metro
+    type: time/metro
+    action: Every 0.18 s while awake
+    position: { x: 420, y: 1120 }
+    inputs:
+      - name: interval
+        connection: ""
+      - name: "on"
+        connection: awake.result
+    outputs:
+      - name: tick
+        connection: arp.clock
+  - id: arp
+    type: audio/sequencer
+    action: "16 steps: E4 G4 B4 D5 F#5 D5 B4 G4 C4 E4 G4 B4 D5 B4 G4 E4"
+    position: { x: 800, y: 1120 }
+    inputs:
+      - name: clock
+        connection: metro.tick
+      - name: steps
+        connection: ""
+    outputs:
+      - name: note
+        connection: mtof.a
+      - name: gate
+        connection: bell.gate
+  - id: mtof
+    type: math/math
+    action: MIDI note a → Hz (mtof)
+    position: { x: 1180, y: 1120 }
+    inputs:
+      - name: a
+        connection: arp.note
+      - name: b
+        connection: ""
+      - name: c
+        connection: ""
+    outputs:
+      - name: result
+        connection: bell.frequency
+  - id: bell
+    type: subgraph
+    graph: worlds/lib/pluck
+    action: Crystal bell arpeggio
+    position: { x: 1560, y: 1120 }
+    inputs:
+      - name: frequency
+        connection: mtof.result
+      - name: gate
+        connection: arp.gate
+      - name: brightness
+        connection: bellbright.value
+    outputs:
+      - name: signal
+        connection: space.signal
+  - id: bellbright
+    type: data/value
+    action: "0.85"
+    position: { x: 1180, y: 1340 }
+    inputs: []
+    outputs:
+      - name: value
+        connection: bell.brightness
+  - id: spacewet
+    type: data/value
+    action: "0.85"
+    position: { x: 1560, y: 1560 }
+    inputs: []
+    outputs:
+      - name: value
+        connection: space.space
+  - id: space
+    type: subgraph
+    graph: worlds/lib/space-fx
+    action: Cavernous
+    position: { x: 1940, y: 1120 }
+    inputs:
+      - name: signal
+        connection: bell.signal
+      - name: space
+        connection: spacewet.value
+    outputs:
+      - name: signal
+        connection: mix.a
+  - id: gongpitch
+    type: data/value
+    action: "41.2 (E1 in Hz)"
+    position: { x: 1180, y: 1780 }
+    inputs: []
+    outputs:
+      - name: value
+        connection: gong.frequency
+  - id: gongbright
+    type: data/value
+    action: "0.25"
+    position: { x: 1180, y: 2000 }
+    inputs: []
+    outputs:
+      - name: value
+        connection: gong.brightness
+  - id: gong
+    type: subgraph
+    graph: worlds/lib/pluck
+    action: Deep gong strike on every tap
+    position: { x: 1560, y: 1780 }
+    inputs:
+      - name: frequency
+        connection: gongpitch.value
+      - name: gate
+        connection: tap_in.tap
+      - name: brightness
+        connection: gongbright.value
+    outputs:
+      - name: signal
+        connection: mix.b
+  - id: mix
+    type: audio/mixer
+    action: "Bells (with space) 1.0, gong 0.9"
+    position: { x: 2320, y: 1120 }
+    inputs:
+      - name: a
+        connection: space.signal
+      - name: b
+        connection: gong.signal
+      - name: c
+        connection: ""
+      - name: d
+        connection: ""
+    outputs:
+      - name: signal
+        connection: fader.signal
+  - id: meter
+    type: audio/analyser
+    action: Music level
+    position: { x: 2700, y: 1560 }
+    inputs:
+      - name: signal
+        connection: fader.signal
+    outputs:
+      - name: spectrum
+        connection: ""
+      - name: waveform
+        connection: ""
+      - name: level
+        connection: glow.value
+  - id: glow
+    type: math/smooth
+    action: "Smooth the level, 0.85"
+    position: { x: 3080, y: 1560 }
+    inputs:
+      - name: value
+        connection: meter.level
+      - name: amount
+        connection: ""
+    outputs:
+      - name: value
+        connection:
+          - crystal.glow
+          - scene.glow
+  - id: fader
+    type: audio/gain
+    action: Fades the whole world in and out with the crossfade
+    position: { x: 2700, y: 1120 }
+    inputs:
+      - name: signal
+        connection: mix.signal
+      - name: gain
+        connection: fade.value
+    outputs:
+      - name: signal
+        connection:
+          - signal_out.signal
+          - meter.signal
+  - id: signal_out
+    type: graph-output
+    action: "The world's sound"
+    position: { x: 3080, y: 1120 }
+    inputs:
+      - name: signal
+        connection: fader.signal
+    outputs: []
+  - id: element_out
+    type: graph-output
+    action: "The world's full-screen visual"
+    position: { x: 3080, y: 1560 }
+    inputs:
+      - name: element
+        connection: scene.element
+    outputs: []

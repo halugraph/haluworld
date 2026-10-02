@@ -1,0 +1,27 @@
+description: Arranges elements in a row, column or grid
+category: UI
+color: "#42a5f5"
+icon: view_quilt
+function: |
+  Groups UI elements and arranges them: a row of knobs, a column of controls, a grid of pads.
+approach: |
+  A `<div>` with class `hlg-row`, `hlg-col` or `hlg-grid` depending on `direction` ("row" | "column" |
+  "grid"; default from the action, else "column"). Children arrive on `children` (fan-in); keep them
+  in an array indexed by `info.slot` and re-render with `replaceChildren` in wire order. Rows wrap and
+  collapse into a column under 600 px (style.css does this for `hlg-row`). Gaps, alignment and
+  proportions follow the action ("controls on the left, visual on the right" → a two-column grid).
+deliverables: |
+  - `element`: the container, emitted once at creation, containing every child element in wire order.
+  - Re-layout when `direction` changes.
+preconditions: |
+  - `children` must receive DOM elements (`element` outputs). Other values are shown as text and
+    reported as a warning.
+  - `element` must itself be wired into the page (output `content` or another layout/panel).
+inputs:
+  - name: children
+    description: DOM elements to arrange (fan-in; wire order = visual order)
+  - name: direction
+    description: '"row", "column" or "grid" (default column)'
+outputs:
+  - name: element
+    description: The container DOM element

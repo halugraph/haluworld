@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "halugraph": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["tools/cmd/halugraph-mcp.mjs"]
+    }
+  }
+}

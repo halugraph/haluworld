@@ -1,0 +1,28 @@
+description: White, pink or brown noise generator
+category: Audio
+color: "#7e57c2"
+icon: grain
+function: |
+  A noise source — for percussion (with an envelope), wind/ocean textures, risers, or randomness at
+  audio rate.
+approach: |
+  Generate 2 seconds of noise into an `AudioBuffer` (stereo, decorrelated channels) and play it with a
+  looping `AudioBufferSourceNode` → output `GainNode` (emitted on `signal`).
+  - white: `Math.random() * 2 - 1`
+  - pink: Paul Kellet's filter over white noise (≈ -3 dB/octave), normalised
+  - brown: integrated white noise (`last = (last + 0.02 * white) / 1.02`), normalised ×3.5
+  `color` switches by regenerating the buffer and cross-fading (20 ms) to the new source.
+  Default colour from the action, else white. Output level around -12 dBFS (gain 0.25) — noise is loud.
+deliverables: |
+  - `signal`: an AudioNode emitted once at creation, continuously playing noise of the requested colour.
+  - Seamless loop (no audible click at the loop point: fade the buffer ends by 5 ms).
+preconditions: |
+  - `signal` should reach an audio/dac (usually through a gain/envelope or filter) or an analyser.
+  - `color` must be "white", "pink" or "brown" (case-insensitive); unknown values fall back to white
+    with a warning.
+inputs:
+  - name: color
+    description: Noise colour — white, pink or brown
+outputs:
+  - name: signal
+    description: The noise signal (AudioNode)

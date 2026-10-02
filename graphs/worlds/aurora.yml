@@ -1,0 +1,427 @@
+description: "World 2 — Aurora: northern lights over a still arctic sea, slow pad and chimes"
+nodes:
+  - id: about
+    type: comment
+    action: AURORA — calm. A detuned three-oscillator pad walks Dm → B♭ → F → C every 6 s through a slowly sweeping filter and the space-fx subgraph; taps play pentatonic chimes. The shader draws aurora curtains that shimmer with the music level and lean with the pointer.
+    position: { x: 40, y: 40 }
+    size: { width: 620, height: 160 }
+    inputs: []
+    outputs: []
+  - id: active_in
+    type: graph-input
+    action: true while this world is on screen (the director sets it)
+    position: { x: 40, y: 240 }
+    inputs: []
+    outputs:
+      - name: active
+        connection: on.a
+  - id: x_in
+    type: graph-input
+    action: "Pointer x 0..1 (the real mouse, or the ghost pointer in attract mode)"
+    position: { x: 40, y: 460 }
+    inputs: []
+    outputs:
+      - name: x
+        connection: shader.params
+  - id: y_in
+    type: graph-input
+    action: "Pointer y 0..1, 0 = top"
+    position: { x: 40, y: 680 }
+    inputs: []
+    outputs:
+      - name: "y"
+        connection:
+          - chime.brightness
+          - shader.params
+  - id: tap_in
+    type: graph-input
+    action: A bang on every click / tap / space bar (or a ghost tap in attract mode)
+    position: { x: 40, y: 900 }
+    inputs: []
+    outputs:
+      - name: tap
+        connection:
+          - pick.trigger
+          - chime.gate
+  - id: on
+    type: math/math
+    action: "active ? 1 : 0"
+    position: { x: 40, y: 1120 }
+    inputs:
+      - name: a
+        connection: active_in.active
+      - name: b
+        connection: ""
+      - name: c
+        connection: ""
+    outputs:
+      - name: result
+        connection: fade.target
+  - id: fade
+    type: time/tween
+    action: "1.2 s easeInOutSine fade between 0 and 1"
+    position: { x: 420, y: 1120 }
+    inputs:
+      - name: target
+        connection: on.result
+      - name: duration
+        connection: ""
+      - name: easing
+        connection: ""
+    outputs:
+      - name: value
+        connection:
+          - awake.a
+          - shader.params
+          - fader.gain
+  - id: awake
+    type: math/math
+    action: "a > 0.001 (true while the world is visible or fading)"
+    position: { x: 800, y: 1120 }
+    inputs:
+      - name: a
+        connection: fade.value
+      - name: b
+        connection: ""
+      - name: c
+        connection: ""
+    outputs:
+      - name: result
+        connection:
+          - clock.running
+          - metro.on
+  - id: clock
+    type: time/clock
+    action: Drives the shader; pauses while hidden
+    position: { x: 420, y: 240 }
+    inputs:
+      - name: running
+        connection: awake.result
+    outputs:
+      - name: time
+        connection: shader.time
+      - name: delta
+        connection: ""
+      - name: frame
+        connection: ""
+  - id: metro
+    type: time/metro
+    action: One chord every 6 s
+    position: { x: 420, y: 680 }
+    inputs:
+      - name: interval
+        connection: ""
+      - name: "on"
+        connection: awake.result
+    outputs:
+      - name: tick
+        connection: chords.clock
+  - id: chords
+    type: audio/sequencer
+    action: "Chord roots D3, Bb2, F3, C3"
+    position: { x: 800, y: 680 }
+    inputs:
+      - name: clock
+        connection: metro.tick
+      - name: steps
+        connection: ""
+    outputs:
+      - name: note
+        connection: root.a
+      - name: gate
+        connection: ""
+  - id: root
+    type: math/math
+    action: MIDI note a → Hz (mtof)
+    position: { x: 1180, y: 680 }
+    inputs:
+      - name: a
+        connection: chords.note
+      - name: b
+        connection: ""
+      - name: c
+        connection: ""
+    outputs:
+      - name: result
+        connection:
+          - osc1.frequency
+          - fifth.a
+          - ninth.a
+  - id: fifth
+    type: math/math
+    action: a × 1.5 (a fifth above)
+    position: { x: 1560, y: 900 }
+    inputs:
+      - name: a
+        connection: root.result
+      - name: b
+        connection: ""
+      - name: c
+        connection: ""
+    outputs:
+      - name: result
+        connection: osc2.frequency
+  - id: ninth
+    type: math/math
+    action: "a × 2.245 (a ninth above, the shimmering colour tone)"
+    position: { x: 1560, y: 1120 }
+    inputs:
+      - name: a
+        connection: root.result
+      - name: b
+        connection: ""
+      - name: c
+        connection: ""
+    outputs:
+      - name: result
+        connection: osc3.frequency
+  - id: osc1
+    type: audio/oscillator
+    action: "Sawtooth, detune −8 cents, 1.5 s glide between chords"
+    position: { x: 1940, y: 680 }
+    inputs:
+      - name: frequency
+        connection: root.result
+      - name: type
+        connection: ""
+      - name: detune
+        connection: ""
+    outputs:
+      - name: signal
+        connection: padmix.a
+  - id: osc2
+    type: audio/oscillator
+    action: "Sawtooth, detune +7 cents, 1.5 s glide"
+    position: { x: 1940, y: 900 }
+    inputs:
+      - name: frequency
+        connection: fifth.result
+      - name: type
+        connection: ""
+      - name: detune
+        connection: ""
+    outputs:
+      - name: signal
+        connection: padmix.b
+  - id: osc3
+    type: audio/oscillator
+    action: "Triangle, 1.5 s glide"
+    position: { x: 1940, y: 1120 }
+    inputs:
+      - name: frequency
+        connection: ninth.result
+      - name: type
+        connection: ""
+      - name: detune
+        connection: ""
+    outputs:
+      - name: signal
+        connection: padmix.c
+  - id: padmix
+    type: audio/mixer
+    action: "Equal parts, 0.25 each (soft)"
+    position: { x: 2320, y: 900 }
+    inputs:
+      - name: a
+        connection: osc1.signal
+      - name: b
+        connection: osc2.signal
+      - name: c
+        connection: osc3.signal
+      - name: d
+        connection: ""
+    outputs:
+      - name: signal
+        connection: padfilter.signal
+  - id: lfo
+    type: math/lfo
+    action: "Very slow sine, 0.05 Hz"
+    position: { x: 1940, y: 1340 }
+    inputs:
+      - name: frequency
+        connection: ""
+      - name: shape
+        connection: ""
+    outputs:
+      - name: value
+        connection: sweep.value
+  - id: sweep
+    type: math/map-range
+    action: LFO −1..1 → cutoff 350..2200 Hz
+    position: { x: 2320, y: 1340 }
+    inputs:
+      - name: value
+        connection: lfo.value
+      - name: in-min
+        connection: ""
+      - name: in-max
+        connection: ""
+      - name: out-min
+        connection: ""
+      - name: out-max
+        connection: ""
+    outputs:
+      - name: value
+        connection: padfilter.cutoff
+  - id: padfilter
+    type: audio/filter
+    action: "Low-pass, resonance 2"
+    position: { x: 2700, y: 900 }
+    inputs:
+      - name: signal
+        connection: padmix.signal
+      - name: cutoff
+        connection: sweep.value
+      - name: resonance
+        connection: ""
+      - name: type
+        connection: ""
+    outputs:
+      - name: signal
+        connection: busmix.a
+  - id: pick
+    type: math/random
+    action: Whole number 0..9 on every tap
+    position: { x: 420, y: 1340 }
+    inputs:
+      - name: trigger
+        connection: tap_in.tap
+      - name: min
+        connection: ""
+      - name: max
+        connection: ""
+    outputs:
+      - name: value
+        connection: scale.a
+  - id: scale
+    type: math/math
+    action: "Degree a of the D major pentatonic scale starting at D5 (D E F# A B, next octave from 5) → MIDI → Hz"
+    position: { x: 800, y: 1340 }
+    inputs:
+      - name: a
+        connection: pick.value
+      - name: b
+        connection: ""
+      - name: c
+        connection: ""
+    outputs:
+      - name: result
+        connection: chime.frequency
+  - id: chime
+    type: subgraph
+    graph: worlds/lib/pluck
+    action: Glassy chime; pointer y = brightness
+    position: { x: 1180, y: 1560 }
+    inputs:
+      - name: frequency
+        connection: scale.result
+      - name: gate
+        connection: tap_in.tap
+      - name: brightness
+        connection: y_in.y
+    outputs:
+      - name: signal
+        connection: busmix.b
+  - id: busmix
+    type: audio/mixer
+    action: "Pad 1.0, chimes 0.6"
+    position: { x: 3080, y: 900 }
+    inputs:
+      - name: a
+        connection: padfilter.signal
+      - name: b
+        connection: chime.signal
+      - name: c
+        connection: ""
+      - name: d
+        connection: ""
+    outputs:
+      - name: signal
+        connection: space.signal
+  - id: spacewet
+    type: data/value
+    action: "0.75"
+    position: { x: 3080, y: 1340 }
+    inputs: []
+    outputs:
+      - name: value
+        connection: space.space
+  - id: space
+    type: subgraph
+    graph: worlds/lib/space-fx
+    action: "Far, far away"
+    position: { x: 3460, y: 900 }
+    inputs:
+      - name: signal
+        connection: busmix.signal
+      - name: space
+        connection: spacewet.value
+    outputs:
+      - name: signal
+        connection: fader.signal
+  - id: meter
+    type: audio/analyser
+    action: "Level of the whole world, for the shimmer"
+    position: { x: 3840, y: 1340 }
+    inputs:
+      - name: signal
+        connection: fader.signal
+    outputs:
+      - name: spectrum
+        connection: ""
+      - name: waveform
+        connection: ""
+      - name: level
+        connection: shader.params
+  - id: shader
+    type: graphics/shader
+    action: "Aurora borealis over a mirror-still arctic sea at night: layered green → teal → violet curtains (domain-warped fbm, vertical streaks) rippling slowly; a dense star field with a faint milky way; dark mountain silhouettes; the sea below reflects the aurora with gentle ripples. u_param0 = pointer x: the curtains lean and drift towards it and the hue shifts slightly. u_param1 = pointer y: curtain height/intensity (top = taller and brighter). u_param2 = world fade 0..1 (multiply final colour). u_param3 = music level 0..1: curtain brightness shimmers with it (smooth it in the shader with a soft curve). Keep it under ~60 fbm octaves total per pixel."
+    position: { x: 3460, y: 240 }
+    inputs:
+      - name: time
+        connection: clock.time
+      - name: resolution
+        connection: ""
+      - name: texture
+        connection: ""
+      - name: params
+        connection:
+          - x_in.x
+          - y_in.y
+          - fade.value
+          - meter.level
+    outputs:
+      - name: texture
+        connection: ""
+      - name: element
+        connection: element_out.element
+  - id: fader
+    type: audio/gain
+    action: Fades the whole world in and out with the crossfade
+    position: { x: 3840, y: 900 }
+    inputs:
+      - name: signal
+        connection: space.signal
+      - name: gain
+        connection: fade.value
+    outputs:
+      - name: signal
+        connection:
+          - signal_out.signal
+          - meter.signal
+  - id: signal_out
+    type: graph-output
+    action: "The world's sound"
+    position: { x: 4220, y: 900 }
+    inputs:
+      - name: signal
+        connection: fader.signal
+    outputs: []
+  - id: element_out
+    type: graph-output
+    action: "The world's full-screen visual"
+    position: { x: 4220, y: 1340 }
+    inputs:
+      - name: element
+        connection: shader.element
+    outputs: []

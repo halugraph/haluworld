@@ -1,0 +1,23 @@
+# halugraph project — files that must not be committed
+
+# dependencies (reinstalled on demand)
+node_modules/
+
+# runtime files of the running halugraph server (see util/README.md)
+util/*.sock
+util/instance.json
+
+# agent scratch space (only its README is kept)
+agents/tmp/*
+!agents/tmp/README.md
+
+# build outputs and the shared toolchain of the compiler agent (re-created by the agent)
+agents/compiles/build/
+agents/compiles/node_modules/
+# `npm run build` inside a compile's app folder
+agents/compiles/*/app/dist/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp

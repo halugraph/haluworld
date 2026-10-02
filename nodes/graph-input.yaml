@@ -1,0 +1,26 @@
+description: An input of this graph when it is used as a subgraph
+category: Core
+color: "#78909c"
+icon: login
+function: |
+  Declares one input of the graph's call interface. Its single output port's NAME becomes the input
+  port name of every `subgraph` node that calls this graph; values arriving there come out of this
+  node's output port inside the graph.
+approach: |
+  Do not generate a node module. In the graph's wiring file add it with the runtime helper
+  `g.add('<id>', graphInput('<port name>'), { type: 'graph-input' })` and wire its port like any
+  output. Order of graph-input nodes in the YAML = order of the interface inputs.
+deliverables: |
+  Values sent to the enclosing subgraph node's input `<port name>` are delivered to everything wired
+  from this node's output port, unchanged (events stay events, values replay to late wires).
+preconditions: |
+  - Exactly one output port with a non-empty name, unique among the graph's graph-input nodes (the
+    default name `in` is fine for a single input but meaningless otherwise — suggest renaming).
+  - No input ports.
+  - The graph should also be used as a subgraph somewhere; in a compiled entry graph a graph-input
+    receives nothing — warn if its output feeds something important and choose a sensible default
+    value from the action (e.g. "pitch in Hz" → 220).
+inputs: []
+outputs:
+  - name: in
+    description: Rename to the interface input's name; carries whatever the caller sends

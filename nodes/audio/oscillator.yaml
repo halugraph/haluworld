@@ -1,0 +1,40 @@
+description: Sine/square/saw/triangle oscillator
+category: Audio
+color: "#7e57c2"
+icon: waves
+function: |
+  Generates a periodic audio-rate signal — the basic sound source of a synth, or a slow modulator
+  when its frequency is very low.
+approach: |
+  Web Audio `OscillatorNode` on the shared `ctx.app.audioContext()`, started immediately
+  (`osc.start()`), feeding an output `GainNode` (level 1) that is emitted on `signal`.
+  - `frequency`: number in Hz (default 440) → `osc.frequency.setTargetAtTime(v, t, 0.005)` for
+    glide-free but click-free changes (use a longer time constant when the action asks for
+    portamento/glide). An AudioNode wired in modulates the AudioParam (FM): connect it to
+    `osc.frequency`.
+  - `type`: "sine" | "square" | "sawtooth" | "triangle" (accept "saw", "tri", "sq" aliases and any
+    case; default from the action, else sine). Custom timbres ("organ", "bell") → `PeriodicWave`.
+  - `detune`: cents (default 0), number or AudioNode.
+  MIDI note numbers arriving on `frequency` (integers 0–127 wired from a keyboard/sequencer `note`)
+  should be converted with `mtof` — only if the source is clearly a note output; note it in plan.md.
+deliverables: |
+  - `signal`: an AudioNode (the output GainNode), emitted once at creation.
+  - Correct pitch, waveform and detune, updated without clicks.
+  - `osc.stop()` and disconnects in `dispose()`.
+preconditions: |
+  - `signal` must eventually reach an audio/dac (directly or through effects) to be heard, or feed an
+    analyser/AudioParam — warn when it goes nowhere.
+  - An oscillator never stops by itself: to play notes it needs an envelope/gain downstream driven by
+    a gate. A keyboard wired only to `frequency` gives an endless drone — report it as a warning
+    unless the action wants a drone.
+  - `frequency` must be a positive number (or an AudioNode); ignore NaN and negative values.
+inputs:
+  - name: frequency
+    description: Pitch in Hz (default 440), number or AudioNode for FM
+  - name: type
+    description: Waveform — sine, square, sawtooth or triangle
+  - name: detune
+    description: Detune in cents (default 0), number or AudioNode
+outputs:
+  - name: signal
+    description: The oscillator output (AudioNode)

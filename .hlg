@@ -1,0 +1,8 @@
+# halugraph project marker — do not delete (halugraph uses it to recognise this folder)
+halugraph: 0.1.0
+name: >-
+  haluworld
+description: >-
+  A vibrant demonstration of what halugraph can do
+main: main
+created: 2026-10-02T07:44:32.031Z

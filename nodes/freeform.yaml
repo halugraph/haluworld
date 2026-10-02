@@ -1,0 +1,27 @@
+description: A custom node — write its function, approach, deliverables and preconditions yourself
+category: Core
+color: "#90a4ae"
+icon: edit_note
+function: |
+  A node whose definition lives on the instance instead of in nodes/. The artist writes the four
+  fields (function, approach, deliverables, preconditions) directly in the inspector and adds the
+  ports they need. Use it for one-off behaviour that no library node covers.
+approach: |
+  Treat the instance's own `function/approach/deliverables/preconditions` exactly like a node type
+  definition (the resolved graph already inlines them as `definition`). Port names are whatever the
+  artist added; infer each port's data type from its name, its wires (what it is connected to) and
+  the text. Generate one module like any other node, with the same factory shape and header comment.
+deliverables: |
+  A module that implements the inline definition: every declared input has a handler, every declared
+  output is emitted with the data type its consumers expect, and `action` further refines the
+  behaviour (the definition says what kind of node it is, the action says what this instance does).
+preconditions: |
+  - `function` must be non-empty; if all four fields are empty, compile it from `action` alone and
+    report a warning (`freeform-empty`).
+  - Ports are optional, but a node with no ports and no visible/audible effect does nothing — say so
+    as a warning.
+  - If the definition contradicts its wiring (e.g. says "outputs a number" but its output feeds an
+    audio input), report it with `error --node` and pick the interpretation that best matches the
+    action.
+inputs: []
+outputs: []

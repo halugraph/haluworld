@@ -1,0 +1,27 @@
+description: Use another graph as a node (a reusable patch)
+category: Core
+color: "#5c6bc0"
+icon: account_tree
+function: |
+  Instantiates another graph (field `graph: <name>`) as a single node. Its ports mirror the target
+  graph's interface: one input per `graph-input` node, one output per `graph-output` node, in node
+  order. Every subgraph node is an independent instance with its own state (two voices = two synths).
+approach: |
+  Do not generate a node module. Generate the target graph's wiring file
+  `src/graphs/<target>.ts` once (a graph factory `({ app }) => graph`) and add each instance in the
+  caller's wiring file with `g.add('<id>', subgraph(target), { type: 'subgraph', graph: '<target>' })`.
+  Wire it with the interface port names. The resolved graph (`graph NAME --resolved --compile ID`)
+  includes every transitive subgraph under `subgraphs`.
+deliverables: |
+  The caller behaves as if the target graph were inlined once per subgraph node: values into the
+  node's inputs enter through the matching graph-input nodes, values from graph-output nodes leave
+  through the node's outputs, and starting/disposing the caller starts/disposes the instance.
+preconditions: |
+  - `graph` must name an existing graph other than the one containing this node, and no chain of
+    subgraphs may lead back to it (recursion cannot be compiled — report `subgraph-recursion`).
+  - The node's ports should match the target's interface; if they drifted, follow the target's
+    interface and report a warning naming the mismatched ports.
+  - The target graph should not contain an `output` node (the app has one page); if it does, ignore
+    it inside the subgraph and warn.
+inputs: []
+outputs: []

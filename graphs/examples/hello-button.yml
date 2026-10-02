@@ -1,0 +1,52 @@
+description: "The tutorial's end state: a button and a label that counts the clicks"
+nodes:
+  - id: about
+    type: comment
+    action: |
+      Hello button — the tutorial's end state.
+
+      The button's `clicked` output is wired to the label; the label's action turns it into a click counter. Both elements go into the App's `content` (button first, then the label). Compile with F5 and click away.
+    position: { x: 40, y: 40 }
+    size: { width: 480, height: 170 }
+    inputs: []
+    outputs: []
+  - id: button1
+    type: ui/button
+    action: A big friendly “Click me” button
+    position: { x: 40, y: 240 }
+    inputs:
+      - name: label
+        connection: ""
+      - name: enabled
+        connection: ""
+    outputs:
+      - name: element
+        connection: app.content
+      - name: clicked
+        connection: label1.text
+      - name: pressed
+        connection: ""
+  - id: label1
+    type: ui/label
+    action: Show how many times the button was clicked
+    position: { x: 420, y: 240 }
+    inputs:
+      - name: text
+        connection: button1.clicked
+    outputs:
+      - name: element
+        connection: app.content
+  - id: app
+    type: output
+    action: "A tiny page titled “Hello button”: the button and the click counter, centred on a dark background"
+    position: { x: 800, y: 240 }
+    inputs:
+      - name: content
+        connection:
+          - button1.element
+          - label1.element
+      - name: title
+        connection: ""
+      - name: style
+        connection: ""
+    outputs: []

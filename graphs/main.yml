@@ -1,0 +1,429 @@
+description: "haluworld — four audiovisual worlds with an attract mode, the halugraph showcase"
+nodes:
+  - id: about
+    type: comment
+    action: |
+      haluworld — the halugraph showcase.
+
+      • Four worlds, each a subgraph (double-click to open): worlds/neon-drive, worlds/aurora, worlds/firefly-garden, worlds/crystal-cave.
+      • They share two library subgraphs: worlds/lib/pluck (a synth voice, used 5×) and worlds/lib/space-fx (echo + hall, used 3×).
+      • director (freeform) owns the state: which world is on, ATTRACT MODE (after 20 s idle it tours the worlds by itself with a ghost pointer and ghost taps), keyboard and mouse.
+      • stage (freeform) crossfades the world visuals with a "dimension rift" transition; hud (freeform) shows title cards, the world dots and a live spectrum.
+      • All world audio meets in the master mixer → volume → speakers + analyser.
+
+      Press F5 to compile. Keys: 1–4 worlds · ←/→ previous/next · space tap · A attract.
+    position: { x: 40, y: 40 }
+    size: { width: 760, height: 320 }
+    inputs: []
+    outputs: []
+  - id: mouse
+    type: input/mouse
+    action: Pointer position over the whole page (0..1) and button state
+    position: { x: 40, y: 680 }
+    inputs: []
+    outputs:
+      - name: x
+        connection: director.pointer-x
+      - name: "y"
+        connection: director.pointer-y
+      - name: down
+        connection: director.pointer-down
+  - id: keys
+    type: input/keyboard
+    action: "All keys (1–4, arrows, space, A)"
+    position: { x: 40, y: 900 }
+    inputs: []
+    outputs:
+      - name: key
+        connection: director.key
+      - name: down
+        connection: ""
+  - id: prevbtn
+    type: ui/button
+    action: “◀” previous world
+    position: { x: 40, y: 1120 }
+    inputs:
+      - name: label
+        connection: ""
+      - name: enabled
+        connection: ""
+    outputs:
+      - name: element
+        connection: dock.children
+      - name: clicked
+        connection: director.prev
+      - name: pressed
+        connection: ""
+  - id: attractbtn
+    type: ui/button
+    action: “✦ Attract” — toggles attract mode
+    position: { x: 40, y: 1340 }
+    inputs:
+      - name: label
+        connection: ""
+      - name: enabled
+        connection: ""
+    outputs:
+      - name: element
+        connection: dock.children
+      - name: clicked
+        connection: director.toggle-attract
+      - name: pressed
+        connection: ""
+  - id: nextbtn
+    type: ui/button
+    action: “▶” next world
+    position: { x: 40, y: 1560 }
+    inputs:
+      - name: label
+        connection: ""
+      - name: enabled
+        connection: ""
+    outputs:
+      - name: element
+        connection: dock.children
+      - name: clicked
+        connection: director.next
+      - name: pressed
+        connection: ""
+  - id: volume
+    type: ui/slider
+    action: "Master volume 0..1, default 0.8, labelled with a speaker icon"
+    position: { x: 40, y: 1780 }
+    inputs:
+      - name: min
+        connection: ""
+      - name: max
+        connection: ""
+      - name: value
+        connection: ""
+    outputs:
+      - name: element
+        connection: dock.children
+      - name: value
+        connection: mastergain.gain
+  - id: director
+    type: freeform
+    action: "The four worlds in order: 0 “Neon Drive”, 1 “Aurora”, 2 “Firefly Garden”, 3 “Crystal Cave”. Start in attract mode on world 0. Attract mode: every 22 s go to the next world (wrapping); the ghost pointer flies a slow Lissajous path (x = 0.5 + 0.38·sin(0.31t), y = 0.5 + 0.3·sin(0.47t + 1)) and ghost taps fire at random every 0.8–2.6 s. Any real input (pointer move > 2% of the screen, pointer down, a key) leaves attract mode and passes the real pointer through; after 20 s without real input attract mode starts again. Keys: 1–4 pick a world, ←/→ prev/next, space = tap, A toggles attract mode. A pointer down that lands on the control dock or the HUD dots (event target inside .hw-dock or .hw-hud) is not a tap."
+    function: "The brain of the demo: a small state machine that decides which world is on screen and whether the demo is in attract mode, and turns real or simulated input into the pointer/tap stream the worlds play with."
+    approach: "Plain TypeScript state in the module: current world, attract flag, time of last real input, next ghost-tap time. Run a ctx.onFrame loop for the attract timer, the ghost pointer (emit x/y every frame while attracting; smooth the hand-over to the real pointer over 0.4 s) and ghost taps. Real input arrives on pointer-x/pointer-y/pointer-down/key/prev/next/toggle-attract/select. For the \"not a tap on the controls\" rule also listen to pointerdown on document (capture) to read event.target.closest('.hw-dock, .hw-hud'). On every world change emit world, world-name and the four booleans (exactly one true). The very first real gesture must also resume the shared AudioContext (browsers start it suspended)."
+    deliverables: "world/world-name/neon/aurora/garden/cave emitted at start and on change; attract emitted at start and on change; x/y continuously (every frame in attract mode, on movement otherwise); tap as a bang. Attract mode cycles the worlds forever with no input."
+    preconditions: "Works with no wires on its inputs (pure attract mode). Timers must use the frame clock, not setInterval, so a hidden tab does not pile up taps."
+    position: { x: 420, y: 680 }
+    inputs:
+      - name: pointer-x
+        connection: mouse.x
+        description: Real pointer x 0..1
+      - name: pointer-y
+        connection: mouse.y
+        description: Real pointer y 0..1
+      - name: pointer-down
+        connection: mouse.down
+        description: Real pointer button state (true while down)
+      - name: key
+        connection: keys.key
+        description: Last key pressed (KeyboardEvent.key string)
+      - name: prev
+        connection: prevbtn.clicked
+        description: "Bang: previous world"
+      - name: next
+        connection: nextbtn.clicked
+        description: "Bang: next world"
+      - name: toggle-attract
+        connection: attractbtn.clicked
+        description: "Bang: toggle attract mode"
+      - name: select
+        connection: hud.select
+        description: World index 0..3 chosen in the HUD
+    outputs:
+      - name: world
+        connection:
+          - stage.world
+          - hud.world
+        description: "Current world index 0..3 (number, emitted on change)"
+      - name: world-name
+        connection:
+          - hud.world-name
+          - title.a
+        description: Current world name (string)
+      - name: attract
+        connection:
+          - stage.attract
+          - hud.attract
+        description: true while attract mode is on (boolean)
+      - name: x
+        connection:
+          - neon.x
+          - aurora.x
+          - garden.x
+          - cave.x
+        description: "Pointer x 0..1 for the worlds: real or ghost"
+      - name: "y"
+        connection:
+          - neon.y
+          - aurora.y
+          - garden.y
+          - cave.y
+        description: "Pointer y 0..1 for the worlds: real or ghost"
+      - name: tap
+        connection:
+          - neon.tap
+          - aurora.tap
+          - garden.tap
+          - cave.tap
+        description: Bang on every real or ghost tap
+      - name: neon
+        connection: neon.active
+        description: true while world 0 is current
+      - name: aurora
+        connection: aurora.active
+        description: true while world 1 is current
+      - name: garden
+        connection: garden.active
+        description: true while world 2 is current
+      - name: cave
+        connection: cave.active
+        description: true while world 3 is current
+  - id: neon
+    type: subgraph
+    graph: worlds/neon-drive
+    action: World 1 — synthwave night drive
+    position: { x: 800, y: 680 }
+    inputs:
+      - name: active
+        connection: director.neon
+      - name: x
+        connection: director.x
+      - name: "y"
+        connection: director.y
+      - name: tap
+        connection: director.tap
+    outputs:
+      - name: signal
+        connection: master.a
+      - name: element
+        connection: stage.neon
+  - id: aurora
+    type: subgraph
+    graph: worlds/aurora
+    action: World 2 — northern lights
+    position: { x: 800, y: 900 }
+    inputs:
+      - name: active
+        connection: director.aurora
+      - name: x
+        connection: director.x
+      - name: "y"
+        connection: director.y
+      - name: tap
+        connection: director.tap
+    outputs:
+      - name: signal
+        connection: master.b
+      - name: element
+        connection: stage.aurora
+  - id: garden
+    type: subgraph
+    graph: worlds/firefly-garden
+    action: World 3 — fireflies you can play
+    position: { x: 800, y: 1120 }
+    inputs:
+      - name: active
+        connection: director.garden
+      - name: x
+        connection: director.x
+      - name: "y"
+        connection: director.y
+      - name: tap
+        connection: director.tap
+    outputs:
+      - name: signal
+        connection: master.c
+      - name: element
+        connection: stage.garden
+  - id: cave
+    type: subgraph
+    graph: worlds/crystal-cave
+    action: World 4 — singing crystal in 3D
+    position: { x: 800, y: 1340 }
+    inputs:
+      - name: active
+        connection: director.cave
+      - name: x
+        connection: director.x
+      - name: "y"
+        connection: director.y
+      - name: tap
+        connection: director.tap
+    outputs:
+      - name: signal
+        connection: master.d
+      - name: element
+        connection: stage.cave
+  - id: stage
+    type: freeform
+    action: "Full-screen stage. Stack the four world visuals (neon, aurora, garden, cave) as absolutely positioned full-viewport layers. Show only the current world; on a change play a 1.2 s “dimension rift”: the new world grows from a glowing circle at the screen centre (animated CSS clip-path circle) with a brief chromatic-aberration flash on the rim; the old one fades out behind it. In attract mode add a very slow Ken-Burns drift (scale 1.0 → 1.04). The rim glow brightens with level."
+    function: A full-screen container that layers several visual elements and animates transitions between them.
+    approach: "One <div class=\"hw-stage\"> (position fixed, inset 0, overflow hidden, black). Each element input goes into its own layer div (position absolute, inset 0; the element itself width/height 100%), slot order = layer order. Transitions with CSS (clip-path: circle() animated via Web Animations API, opacity, filter) — no per-frame JS except reading level for the rim glow via a CSS custom property. Hidden layers get visibility:hidden after their transition ends so the GPU skips them."
+    deliverables: "element: the stage div, emitted once at start. Exactly one world visible at rest; transitions never show a black frame."
+    preconditions: Each world input should be an HTMLElement; ignore others with a warning. Unknown world index → clamp to 0..3.
+    position: { x: 1180, y: 680 }
+    inputs:
+      - name: neon
+        connection: neon.element
+        description: World 0 visual (HTMLElement)
+      - name: aurora
+        connection: aurora.element
+        description: World 1 visual (HTMLElement)
+      - name: garden
+        connection: garden.element
+        description: World 2 visual (HTMLElement)
+      - name: cave
+        connection: cave.element
+        description: World 3 visual (HTMLElement)
+      - name: world
+        connection: director.world
+        description: Current world index 0..3
+      - name: attract
+        connection: director.attract
+        description: Attract mode on/off
+      - name: level
+        connection: analyser.level
+        description: Master level 0..1
+    outputs:
+      - name: element
+        connection: app.content
+        description: "The stage (HTMLElement), full viewport"
+  - id: master
+    type: audio/mixer
+    action: All four worlds at 1.0 (each world fades its own audio)
+    position: { x: 1180, y: 1120 }
+    inputs:
+      - name: a
+        connection: neon.signal
+      - name: b
+        connection: aurora.signal
+      - name: c
+        connection: garden.signal
+      - name: d
+        connection: cave.signal
+    outputs:
+      - name: signal
+        connection: mastergain.signal
+  - id: mastergain
+    type: audio/gain
+    action: "Master volume, followed by a gentle DynamicsCompressor as a safety limiter (threshold −10 dB, ratio 4)"
+    position: { x: 1560, y: 1120 }
+    inputs:
+      - name: signal
+        connection: master.signal
+      - name: gain
+        connection: volume.value
+    outputs:
+      - name: signal
+        connection:
+          - dac.left
+          - dac.right
+          - analyser.signal
+  - id: analyser
+    type: audio/analyser
+    action: Spectrum (64 bands) and level of the master
+    position: { x: 1940, y: 1340 }
+    inputs:
+      - name: signal
+        connection: mastergain.signal
+    outputs:
+      - name: spectrum
+        connection: hud.spectrum
+      - name: waveform
+        connection: ""
+      - name: level
+        connection:
+          - hud.level
+          - stage.level
+  - id: dac
+    type: audio/dac
+    action: "Both speakers, volume 1 (the master gain does the work)"
+    position: { x: 1940, y: 1120 }
+    inputs:
+      - name: left
+        connection: mastergain.signal
+      - name: right
+        connection: mastergain.signal
+      - name: volume
+        connection: ""
+    outputs: []
+  - id: hud
+    type: freeform
+    action: "Overlay HUD in thin, wide-tracked uppercase type (e.g. “Space Grotesk” fallback system-ui), glassy and minimal. Top-left: “HALUWORLD” wordmark with a tiny “made with halugraph” under it. On every world change: a centred title card with the world number and name (“02 · AURORA”) that slides up, holds 2.5 s and fades. Bottom-centre: four dots, the current one glowing in its world colour (Neon Drive #ff2bd6, Aurora #3dffb5, Firefly Garden #ffd23d, Crystal Cave #8a7dff); clicking a dot emits select. Top-right: a 32-bar mini spectrum. While attract mode is on: a pulsing “✦ ATTRACT MODE — touch anything to play” banner along the bottom edge. While the AudioContext is suspended: a “🔊 tap to wake the sound” pill."
+    function: "A heads-up display layered over the stage: branding, world title cards, world navigation dots, attract banner and a live spectrum."
+    approach: "A <div class=\"hw-hud\"> (position fixed, inset 0, pointer-events none; the dots container has pointer-events auto). DOM + CSS animations for the cards and banner; the spectrum is a small <canvas> drawn in ctx.onFrame from the latest spectrum value. Read the AudioContext state from the runtime (ctx.audio) and listen to its statechange for the sound pill."
+    deliverables: "element emitted once; select emitted on dot click (number 0..3). Readable on phones (360 px): wordmark and spectrum shrink, dots stay ≥ 32 px tap targets."
+    preconditions: Works with any input unwired (no spectrum → hide it).
+    position: { x: 1940, y: 680 }
+    inputs:
+      - name: world
+        connection: director.world
+        description: Current world index 0..3
+      - name: world-name
+        connection: director.world-name
+        description: Current world name
+      - name: attract
+        connection: director.attract
+        description: Attract mode on/off
+      - name: spectrum
+        connection: analyser.spectrum
+        description: "Master spectrum (Uint8Array / number[] per frame)"
+      - name: level
+        connection: analyser.level
+        description: Master level 0..1
+    outputs:
+      - name: element
+        connection: app.content
+        description: "The HUD overlay (HTMLElement, class hw-hud, pointer-events only on the dots)"
+      - name: select
+        connection: director.select
+        description: World index chosen by clicking a dot
+  - id: dock
+    type: ui/layout
+    action: "Row, centred, gaps 10 px; glass pill (backdrop blur, 1px white/15% border) floating 20 px above the bottom edge, class hw-dock"
+    position: { x: 420, y: 1560 }
+    inputs:
+      - name: children
+        connection:
+          - prevbtn.element
+          - attractbtn.element
+          - nextbtn.element
+          - volume.element
+      - name: direction
+        connection: ""
+    outputs:
+      - name: element
+        connection: app.content
+  - id: title
+    type: text/text
+    action: "“haluworld · {a}”"
+    position: { x: 1560, y: 460 }
+    inputs:
+      - name: a
+        connection: director.world-name
+      - name: b
+        connection: ""
+    outputs:
+      - name: text
+        connection: app.title
+  - id: app
+    type: output
+    action: "haluworld — a full-screen, no-scroll, black showcase. Layers in content order: the stage fills the viewport, the HUD floats on top, the control dock sits bottom-centre above the HUD dots. Theme: accent #ff2bd6, background #000, text #f4f0ff. Hide the mouse cursor after 3 s without movement while in fullscreen-like attract mode. Must look stunning on a 1080p projector and still work on a phone."
+    position: { x: 2320, y: 900 }
+    inputs:
+      - name: content
+        connection:
+          - stage.element
+          - hud.element
+          - dock.element
+      - name: title
+        connection: title.text
+      - name: style
+        connection: ""
+    outputs: []

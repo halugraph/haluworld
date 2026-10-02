@@ -1,0 +1,15 @@
+{
+  "name": "halugraph-compiles",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Shared toolchain of the halugraph compiler agent: Vite, TypeScript (type check: node node_modules/typescript/bin/tsc) and the libraries generated apps import. Install once with `npm install` in this folder; add libraries (and their @types packages) with `npm install <lib>` here.",
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1"
+  },
+  "dependencies": {
+    "@types/three": "^0.186.0",
+    "three": "^0.186.1"
+  }
+}

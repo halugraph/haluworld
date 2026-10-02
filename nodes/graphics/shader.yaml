@@ -1,0 +1,59 @@
+description: GLSL fragment shader rendering on the GPU
+category: Graphics
+color: "#ff7043"
+icon: auto_awesome
+function: |
+  Renders generative visuals with a fragment shader — plasma, fractals, noise fields, feedback
+  effects, image distortion. The action describes the look; the compiler writes the GLSL.
+approach: |
+  WebGL2 (fall back to WebGL1 with the same shader rewritten in GLSL ES 1.0) on a `<canvas
+  class="hlg-canvas">`, one full-screen triangle, a fragment shader written from the action.
+  Uniforms (always declared, set every frame):
+  - `u_time` (float, seconds): from `time` when wired, otherwise the node's own clock.
+  - `u_resolution` (vec2, pixels): from `resolution` (`[w, h]` or `{width, height}`) or the canvas
+    size × `min(devicePixelRatio, 2)`; resize with a ResizeObserver.
+  - `u_texture` (sampler2D) + `u_textureSize` (vec2): from `texture` (any CanvasImageSource; videos
+    and canvases are re-uploaded every frame). A 1×1 black texture when unwired.
+  - Embedded textures: every `embed` attachment (an image) of the node becomes a `sampler2D
+    u_<name>` + `vec2 u_<name>Size` (the attachment name lower-cased, every character outside a–z 0–9
+    → `_`), loaded once from `ctx.attachment('<name>')` with `new Image()` + `decode()`; the first one
+    is also `u_texture` while `texture` is unwired. Say in a GLSL comment what each texture is.
+  - `params`: each wire becomes `u_param0`, `u_param1`, … in wire order (`info.slot`): numbers →
+    float, `[x, y]` → vec2, CSS colours → vec3; an object `{ name: value }` becomes `u_<name>`
+    uniforms. Say in a GLSL comment what each param means (from the action and the wired source).
+  Render with `ctx.onFrame`. Handle `webglcontextlost/restored`. On compile/link errors show the
+  info log through `ctx.error(...)` (the runtime shows it in the page) and render a dark fallback.
+  Keep the shader efficient (≤ ~100 loop iterations per pixel on laptops) and precision `highp`.
+deliverables: |
+  - `element`: the canvas, emitted once at creation, sized by the action (default: responsive 16:9;
+    `hlg-canvas--full` when the action says full screen/background).
+  - `texture`: the same canvas as a CanvasImageSource for other nodes (create the context with
+    `preserveDrawingBuffer: true` when `texture` is wired).
+  - Smooth 60 fps animation with correct aspect ratio and HiDPI sharpness.
+preconditions: |
+  - The action must describe the visual; an empty action → a tasteful default (animated gradient
+    noise) plus an info diagnostic.
+  - `time` should be wired (time/clock `time`) or the action must allow the internal clock; `params`
+    wires must carry numbers, vectors or colours (not elements or audio → type mismatch error).
+  - `element` or `texture` must be used, or nothing is visible (warning).
+  - embedded texture attachments must be images the browser decodes (PNG, JPEG, WebP, GIF); an SVG
+    works but is rasterised at its intrinsic size.
+inputs:
+  - name: time
+    description: Seconds (float) — drives animation (u_time)
+  - name: resolution
+    description: "[width, height] in pixels (u_resolution); default: canvas size"
+  - name: texture
+    description: An image, canvas or video sampled as u_texture
+  - name: params
+    description: Numbers/vectors/colours → u_param0, u_param1… in wire order
+outputs:
+  - name: texture
+    description: The rendered canvas as a drawable image
+  - name: element
+    description: The canvas DOM element
+attachments:
+  accepts:
+    - image/*
+  role: embed
+  hint: Textures (sampler uniforms)

@@ -1,0 +1,35 @@
+# Codex settings for this halugraph project (see https://developers.openai.com/codex/config-reference).
+#
+# Trust the folder once: Codex reads this file and .codex/rules/ only after you trusted the project folder.
+# The first time you start `codex` here it asks "Trust this folder?" — choose "1. Trust and continue"
+# (in halugraph's terminal tab, or in your own terminal). Codex asks once per folder.
+#
+# What these settings do:
+#   * The agent works inside Codex's sandbox: it can change files in this project folder, and commands
+#     have no network access.
+#   * halugraph's agent client (tools/cmd/halugraph-client) must reach the halugraph server on this
+#     computer (127.0.0.1), which the sandbox blocks too. .codex/rules/halugraph.rules lets Codex run
+#     exactly that client outside the sandbox, without asking you.
+#   * Anything else that needs more than the sandbox allows (installing packages with npm, for example)
+#     is asked for first.
+#
+# Cannot trust the folder? Start Codex with the network opened for every command instead (less safe, so
+# it is not the default):
+#   codex -s workspace-write -c sandbox_workspace_write.network_access=true "Read AGENTS.md and strictly follow it."
+
+sandbox_mode = "workspace-write"
+approval_policy = "on-request"
+
+[sandbox_workspace_write]
+network_access = false
+
+# halugraph's MCP server (.mcp.json is the same for Claude Code): the agent reaches halugraph through MCP tools
+# instead of the client (AGENTS.md §13). Codex starts it in the folder you started codex in, so start codex in
+# this project folder. It runs outside Codex's sandbox and talks only to halugraph on this computer.
+[mcp_servers.halugraph]
+command = "node"
+args = ["tools/cmd/halugraph-mcp.mjs"]
+startup_timeout_sec = 20
+tool_timeout_sec = 600                            # Codex's 300 s default would cut halugraph's 540 s wait_for_event
+default_tools_approval_mode = "approve"           # no approval question for each call (the tools only talk to halugraph)
+env = { HALUGRAPH_MCP_TOOL_TIMEOUT_SEC = "600" }  # tells halugraph the limit above, so a wait ends before it

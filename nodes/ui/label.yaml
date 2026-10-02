@@ -1,0 +1,28 @@
+description: Displays text or a value on the page
+category: UI
+color: "#42a5f5"
+icon: label
+function: |
+  Shows information: a value, a status, a heading, a counter. The action decides how incoming values
+  are presented ("Show the frequency in Hz", "Show how many times the button was clicked").
+approach: |
+  A `<p class="hlg-label">` (or a heading element when the action calls it a title/heading), with
+  `aria-live="polite"` when it shows changing values. Default behaviour: render the incoming `text`
+  value as text — numbers with sensible rounding (≤ 3 decimals), booleans as on/off, arrays/objects as
+  compact JSON, bangs as nothing. The action can change that completely: e.g. "show how many times the
+  button was clicked" means COUNT incoming values (bangs included) and render the count.
+  Use `hlg-label--big` for prominent readouts.
+deliverables: |
+  - `element`: the label element, emitted once at creation with an initial text (from the action, or
+    empty/"–" until a value arrives, or "0" for counters).
+  - Text that updates immediately on every incoming value, formatted as the action describes.
+preconditions: |
+  - `element` must be wired into the page (warning when unwired).
+  - Wiring an audio signal or a DOM element into `text` makes no sense (type mismatch) — report an
+    error unless the action says how to display it (e.g. "show the level in dB" from an analyser).
+inputs:
+  - name: text
+    description: Value to display (any type; formatted per the action)
+outputs:
+  - name: element
+    description: The label DOM element

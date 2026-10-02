@@ -1,0 +1,37 @@
+description: A 3D object (geometry + material) for a scene
+category: Graphics
+color: "#ff7043"
+icon: 3d_rotation
+function: |
+  One 3D object: a shape (box, sphere, torus, knot, custom) with a material, placed and rotated in a
+  graphics/scene-3d.
+approach: |
+  three.js (`import * as THREE from 'three'`, types from `@types/three`). Build the THREE.Mesh once
+  at creation and emit it on `object`; later inputs mutate it in place (the scene re-renders every
+  frame).
+  - `geometry`: "box" | "sphere" | "torus" | "torusKnot" | "plane" | "cone" | "cylinder" |
+    "icosahedron"… or `{ type, ...params }`; default from the action, else an icosahedron.
+    Replacing geometry disposes the old one.
+  - `material`: a CSS colour, or `{ color, metalness, roughness, wireframe, emissive, opacity }`, or
+    "normal"/"toon"/"glass" presets; default MeshStandardMaterial in the theme accent.
+  - `position`: `[x, y, z]`, `{x, y, z}` or a number (y). `rotation`: radians, same shapes.
+  Continuous motion described in the action ("slowly spinning", "bobbing") runs via `ctx.onFrame`.
+deliverables: |
+  - `object`: a THREE.Mesh, emitted once at creation, updated live by the inputs.
+  - Geometry/material disposed in `dispose()`.
+preconditions: |
+  - `object` must be wired into a graphics/scene-3d `objects` input (warning otherwise — it is not a
+    DOM element).
+  - Numeric vector inputs must be numbers or 3-element arrays; others are ignored with a warning.
+inputs:
+  - name: geometry
+    description: Shape name (box, sphere, torus…) or { type, …params }
+  - name: material
+    description: CSS colour or { color, metalness, roughness, wireframe… }
+  - name: position
+    description: "[x, y, z] position"
+  - name: rotation
+    description: "[x, y, z] rotation in radians"
+outputs:
+  - name: object
+    description: The THREE.Mesh for a scene-3d

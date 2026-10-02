@@ -1,0 +1,30 @@
+description: Mixes up to four audio signals into one
+category: Audio
+color: "#7e57c2"
+icon: tune
+function: |
+  Sums several audio signals (voices, layers, effects returns) into one, each with its own level.
+approach: |
+  One `GainNode` per channel `a`, `b`, `c`, `d` (every AudioNode wired into a channel connects to its
+  gain) → a summing `GainNode` → output emitted on `signal`. Channel levels: from the action ("drums
+  loud, pad quiet"), else 1 / √(number of connected channels) each so four full-scale inputs do not
+  clip. A number (instead of an AudioNode) arriving on a channel sets that channel's level (0..1) —
+  handy for wiring sliders straight in; record that interpretation in plan.md.
+deliverables: |
+  - `signal`: the mix (AudioNode), emitted once at creation.
+  - Balanced levels without clipping; unconnected channels contribute nothing.
+preconditions: |
+  - At least one channel must receive an AudioNode (warning when none do).
+  - The output should reach a dac/analyser/effect.
+inputs:
+  - name: a
+    description: Channel A — AudioNode (or a number to set its level)
+  - name: b
+    description: Channel B — AudioNode (or a number to set its level)
+  - name: c
+    description: Channel C — AudioNode (or a number to set its level)
+  - name: d
+    description: Channel D — AudioNode (or a number to set its level)
+outputs:
+  - name: signal
+    description: The mixed signal (AudioNode)

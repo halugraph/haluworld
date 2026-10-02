@@ -1,0 +1,36 @@
+description: Step sequencer — plays a pattern of notes on each clock tick
+category: Audio
+color: "#7e57c2"
+icon: view_week
+function: |
+  Steps through a looping pattern of notes, one step per clock tick — basslines, arpeggios, drum
+  patterns (with one sequencer per drum).
+approach: |
+  Pure logic in the node module (no Web Audio needed): keep a step index; on every `clock` value
+  (a bang from time/metro, or any value) read the current step, advance (wrap around), and emit.
+  - `steps`: the pattern. Accept an array (numbers = MIDI notes, `null`/0/"-"/"." = rest, note names
+    like "C4", "D#3"), a string ("C3 - E3 G3 . C4"), or a number (step count — the notes then come
+    from the action, e.g. "C minor pentatonic arpeggio"). Default: 8 steps from the action, else
+    [60, 63, 67, 70, 72, 70, 67, 63].
+  - On a note step: emit `note` (MIDI number) then `gate` true; emit `gate` false after half a tick
+    (measure the interval between ticks) or at the latest just before the next tick. Rests emit
+    `gate` false only.
+  - Changing `steps` keeps the current position modulo the new length.
+deliverables: |
+  - `note`: MIDI note numbers, emitted before the matching `gate` true.
+  - `gate`: boolean note on/off per step, never stuck on (always released).
+preconditions: |
+  - `clock` must be wired (usually from time/metro `tick`) — otherwise it never plays (error when the
+    sequencer drives audio).
+  - Oscillators need Hz: convert `note` with `mtof` downstream or in a math/math node.
+  - For sound, `gate` should drive an envelope (audio/envelope `gate`).
+inputs:
+  - name: clock
+    description: Advance one step per incoming value (bang from time/metro)
+  - name: steps
+    description: Pattern — array/string of notes and rests, or a step count
+outputs:
+  - name: note
+    description: MIDI note number of the current step
+  - name: gate
+    description: Boolean note on/off for the current step

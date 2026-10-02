@@ -1,0 +1,26 @@
+description: Computer keyboard keys
+category: Input
+color: "#ab47bc"
+icon: keyboard
+function: |
+  Reacts to the computer keyboard — shortcuts, games, playing sounds with keys, toggling fullscreen
+  or modes from anywhere on the page.
+approach: |
+  `keydown`/`keyup` listeners on `window` (via `ctx.listen`). Ignore events whose target is an input,
+  textarea, select or contenteditable (the user is typing), and ignore auto-repeat (`event.repeat`)
+  unless the action wants it. On keydown emit `key` (`event.key`: "a", "ArrowLeft", " ", "Enter")
+  then `down` true; on keyup emit `key` then `down` false. The action may restrict keys ("only the
+  space bar", "arrow keys") — filter accordingly — and may ask to `preventDefault` (e.g. stop space
+  from scrolling the page).
+deliverables: |
+  - `key`: the key name per key event.
+  - `down`: boolean per key event (true on press, false on release).
+preconditions: |
+  - At least one output must be wired (warning otherwise).
+  - The page must have focus; inside the halugraph preview the user clicks into the app first.
+inputs: []
+outputs:
+  - name: key
+    description: The key name (KeyboardEvent.key)
+  - name: down
+    description: Boolean, true on press and false on release

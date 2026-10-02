@@ -1,0 +1,36 @@
+description: 3D scene renderer (three.js) with camera and lights
+category: Graphics
+color: "#ff7043"
+icon: view_in_ar
+function: |
+  Renders 3D objects (from graphics/mesh) with lights and a camera — rotating sculptures, orbiting
+  planets, audio-reactive geometry.
+approach: |
+  three.js (`npm install three @types/three` in agents/compiles; `import * as THREE from 'three'`;
+  never a CDN).
+  `WebGLRenderer({ antialias: true, alpha: true })`, `setPixelRatio(min(devicePixelRatio, 2))`,
+  canvas class `hlg-canvas`, ResizeObserver → `setSize` + camera aspect.
+  - `objects`: fan-in; each value is a THREE.Object3D (or an array of them) → `scene.add` (replace the
+    object previously received on the same slot, `info.slot`).
+  - `camera`: `{ position: [x, y, z], lookAt: [x, y, z], fov }` or a preset string from the action
+    ("orbit" → OrbitControls from `three/examples/jsm/controls/OrbitControls.js`, "fly-through"…).
+    Default: PerspectiveCamera fov 50 at (0, 1.5, 5) looking at the origin.
+  - Lighting/background/fog/tone mapping from the action; default: hemisphere light + a soft
+    directional light, background from `--hlg-bg`.
+  Render with `ctx.onFrame`; dispose the renderer, geometries and materials in `dispose()`.
+deliverables: |
+  - `element`: the renderer's canvas, emitted once at creation, responsive, HiDPI-aware.
+  - Every object wired into `objects` visible and animated as their actions say, at 60 fps.
+preconditions: |
+  - `objects` should receive THREE.Object3D values from graphics/mesh (or other 3D nodes); DOM
+    elements or AudioNodes are a type mismatch (error).
+  - All 3D nodes must import the same `three` package (bundled once).
+  - `element` must reach the page (warning when unwired).
+inputs:
+  - name: objects
+    description: THREE.Object3D values (fan-in; e.g. from graphics/mesh)
+  - name: camera
+    description: "{ position, lookAt, fov } or a preset name like orbit"
+outputs:
+  - name: element
+    description: The 3D canvas DOM element

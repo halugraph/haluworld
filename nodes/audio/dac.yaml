@@ -1,0 +1,36 @@
+description: Speakers — plays whatever audio is wired into it
+category: Audio
+color: "#7e57c2"
+icon: speaker
+function: |
+  The audio output (digital-to-analog converter, like `dac~` in Pd). Anything wired into `left`/`right`
+  becomes audible. Without a dac in the graph, nothing makes sound.
+approach: |
+  Web Audio on the shared `ctx.app.audioContext()`:
+  `ChannelMergerNode(2)` → master `GainNode` (volume) → a gentle `DynamicsCompressorNode` (threshold
+  -6 dB, ratio 4 — protects ears and speakers) → `destination`.
+  - `left`/`right` receive AudioNodes: `source.connect(merger, 0, 0)` / `(merger, 0, 1)`. Several wires
+    on one side are summed (Web Audio does this). If only ONE side is wired, route it to both channels
+    (centre) unless the action explicitly wants one side.
+  - `volume`: number 0..1 (default 0.8), applied with `gain.setTargetAtTime(v, t, 0.02)` (no clicks);
+    an AudioNode wired into `volume` modulates it.
+  - Browsers start audio suspended: in `start()` call `ctx.app.requireUserGesture({ text: 'Click to
+    start the sound' })` — it shows the runtime's "click to start" overlay until the first click/key.
+  - Disconnect everything in `dispose()`.
+deliverables: |
+  - Audible, click-free output of every connected source on the right channels.
+  - A "click to start" overlay (from the runtime) before the first user gesture; no silent failure.
+  - No element output: the dac is invisible (volume UI comes from a slider wired into `volume`).
+preconditions: |
+  - At least one of `left`/`right` must receive an audio signal (an AudioNode from audio/*, media/audio,
+    a subgraph voice…) — otherwise report a warning "dac has no input".
+  - Wiring numbers, booleans or elements into `left`/`right` is a type mismatch (error).
+  - One dac per app is typical; several dacs are fine (they all feed the same destination).
+inputs:
+  - name: left
+    description: Audio signal (AudioNode) for the left channel (fan-in sums)
+  - name: right
+    description: Audio signal (AudioNode) for the right channel (fan-in sums)
+  - name: volume
+    description: Master volume 0..1 (default 0.8), number or AudioNode
+outputs: []

@@ -1,0 +1,39 @@
+description: A horizontal slider producing a number in a range
+category: UI
+color: "#42a5f5"
+icon: linear_scale
+function: |
+  A continuous control for one number between `min` and `max` — frequency, cutoff, size, speed…
+approach: |
+  `<input type="range" class="hlg-slider">` inside a `<label class="hlg-field">` with a caption
+  (`hlg-field__label`, from the action: "Cutoff", "Speed"…) and a live value readout
+  (`<output class="hlg-field__value">` with sensible rounding and units if the action names them).
+  - Defaults: min 0, max 1, value = middle of the range; `step` = "any" unless the action implies
+    integers (e.g. "1–16 steps") or a step size.
+  - "logarithmic"/"exponential" in the action (typical for Hz): map the slider position p ∈ [0,1] to
+    `min * (max/min) ** p` (requires min > 0) and invert for incoming values.
+  - `input` event → emit `value` continuously while dragging (not only on `change`).
+  - Incoming `min`/`max` update the range and re-clamp; incoming `value` moves the thumb and emits the
+    clamped value only when it differs from the current one (prevents feedback loops).
+deliverables: |
+  - `element`: the labelled control (the `<label>` wrapper), emitted once at creation.
+  - `value`: a finite number within [min, max], emitted once at creation (initial value) and on every
+    change. Replay makes late wires receive the current value.
+  - Works with mouse, touch and keyboard (arrow keys come free with a range input).
+preconditions: |
+  - `min` < `max`; if they arrive swapped, swap them and warn. Non-numeric inputs are ignored
+    (use `toNumber` from hlg-runtime.ts).
+  - Logarithmic mapping needs min > 0 — clamp min to a small positive number and warn otherwise.
+  - `element` must be wired into the page to be usable (warning when unwired).
+inputs:
+  - name: min
+    description: Lower bound, number (default 0)
+  - name: max
+    description: Upper bound, number (default 1)
+  - name: value
+    description: Sets the current value (clamped); also the initial value when wired from a constant
+outputs:
+  - name: element
+    description: The labelled slider DOM element
+  - name: value
+    description: The current number, emitted on every movement

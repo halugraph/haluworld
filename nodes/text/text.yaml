@@ -1,0 +1,27 @@
+description: Builds text from a template and values
+category: Text
+color: "#26c6da"
+icon: title
+function: |
+  Makes text out of values: "Frequency: 440 Hz", "Score: 12", combining words, formatting numbers,
+  upper-casing, counting characters.
+approach: |
+  Implement the action as a template/formatting function at compile time: e.g. "Frequency: {a} Hz
+  with 0 decimals" → `` `Frequency: ${Math.round(a)} Hz` ``. Default (empty action): `a` and `b`
+  joined with a space, skipping missing values. Numbers get sensible rounding (≤ 3 decimals), arrays
+  are joined with ", ", objects shown as compact JSON. Recompute on every input change.
+deliverables: |
+  - `text`: a string, emitted on every change of `a` or `b` (and at creation when the action yields
+    static text).
+preconditions: |
+  - At least one input must be wired or the action must contain literal text (warning otherwise).
+  - Inputs of any type are accepted; DOM elements and AudioNodes cannot be shown as text (type
+    mismatch).
+inputs:
+  - name: a
+    description: First value (any type)
+  - name: b
+    description: Second value (any type)
+outputs:
+  - name: text
+    description: The resulting string

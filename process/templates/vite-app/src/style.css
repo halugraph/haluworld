@@ -1,0 +1,558 @@
+/*
+ * Default styles for halugraph-generated apps: dark by default, light when the OS prefers it,
+ * responsive, accessible focus rings. Node modules use the `hlg-*` classes below so every app looks
+ * coherent out of the box; the output node's `style` input or the node actions can restyle anything.
+ * Theme through the CSS variables on :root (the output node sets them from its `style` input).
+ */
+
+:root {
+  color-scheme: dark light;
+  --hlg-bg: #0f1115;
+  --hlg-bg-elevated: #171a21;
+  --hlg-surface: #1e222b;
+  --hlg-border: #2c313c;
+  --hlg-text: #e8eaf0;
+  --hlg-text-muted: #9aa3b2;
+  --hlg-accent: #7c9cff;
+  --hlg-accent-contrast: #0b0d12;
+  --hlg-accent-2: #ff7ac6;
+  --hlg-danger: #ff6b6b;
+  --hlg-success: #4cd4a0;
+  --hlg-radius: 12px;
+  --hlg-radius-small: 8px;
+  --hlg-gap: 16px;
+  --hlg-font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --hlg-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --hlg-shadow: 0 8px 30px rgb(0 0 0 / 35%);
+  --hlg-focus: 0 0 0 3px color-mix(in srgb, var(--hlg-accent) 55%, transparent);
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --hlg-bg: #f6f7fb;
+    --hlg-bg-elevated: #ffffff;
+    --hlg-surface: #ffffff;
+    --hlg-border: #dde1ea;
+    --hlg-text: #161a22;
+    --hlg-text-muted: #5b6475;
+    --hlg-accent: #3d5afe;
+    --hlg-accent-contrast: #ffffff;
+    --hlg-shadow: 0 8px 30px rgb(20 30 60 / 12%);
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--hlg-bg);
+  color: var(--hlg-text);
+  font-family: var(--hlg-font);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+#app {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---- page layout (output node) ------------------------------------------------ */
+
+.hlg-output {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hlg-gap);
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: clamp(16px, 4vw, 40px);
+}
+
+.hlg-output--centered {
+  min-height: 100vh;
+  min-height: 100dvh;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.hlg-output--full {
+  max-width: none;
+  padding: 0;
+}
+
+.hlg-title {
+  margin: 0;
+  font-size: clamp(1.6rem, 4vw, 2.6rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.hlg-text {
+  margin: 0;
+  color: var(--hlg-text-muted);
+}
+
+/* ---- layout containers (ui/layout, ui/panel) ---------------------------------- */
+
+.hlg-row,
+.hlg-col {
+  display: flex;
+  gap: var(--hlg-gap);
+}
+
+.hlg-row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.hlg-col {
+  flex-direction: column;
+}
+
+.hlg-grid {
+  display: grid;
+  gap: var(--hlg-gap);
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
+}
+
+.hlg-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: var(--hlg-surface);
+  border: 1px solid var(--hlg-border);
+  border-radius: var(--hlg-radius);
+  box-shadow: var(--hlg-shadow);
+}
+
+.hlg-panel__title {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--hlg-text-muted);
+}
+
+/* A labelled control: <label class="hlg-field"><span class="hlg-field__label">Cutoff</span> <input …> <output class="hlg-field__value">…</output></label> */
+.hlg-field {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 4px 12px;
+  min-width: min(260px, 100%);
+  text-align: left;
+}
+
+.hlg-field__label {
+  font-size: 0.85rem;
+  color: var(--hlg-text-muted);
+}
+
+.hlg-field__value {
+  font-family: var(--hlg-mono);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.hlg-field > :is(input, select, textarea, .hlg-control) {
+  grid-column: 1 / -1;
+}
+
+/* ---- controls ------------------------------------------------------------------- */
+
+.hlg-button {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 18px;
+  font: inherit;
+  font-weight: 600;
+  color: var(--hlg-text);
+  background: var(--hlg-surface);
+  border: 1px solid var(--hlg-border);
+  border-radius: 999px;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: transform 80ms ease, background 150ms ease, border-color 150ms ease;
+}
+
+.hlg-button:hover {
+  border-color: var(--hlg-accent);
+}
+
+.hlg-button:active {
+  transform: scale(0.97);
+}
+
+.hlg-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.hlg-button--primary {
+  color: var(--hlg-accent-contrast);
+  background: var(--hlg-accent);
+  border-color: transparent;
+}
+
+.hlg-button--big {
+  min-height: 56px;
+  padding: 12px 32px;
+  font-size: 1.2rem;
+}
+
+:is(.hlg-button, .hlg-input, .hlg-select, .hlg-slider, .hlg-toggle, .hlg-knob, .hlg-xy-pad, .hlg-keyboard__key):focus-visible {
+  outline: none;
+  box-shadow: var(--hlg-focus);
+}
+
+.hlg-input,
+.hlg-select {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 12px;
+  font: inherit;
+  color: var(--hlg-text);
+  background: var(--hlg-bg-elevated);
+  border: 1px solid var(--hlg-border);
+  border-radius: var(--hlg-radius-small);
+}
+
+.hlg-number {
+  width: 7em;
+  font-family: var(--hlg-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.hlg-slider {
+  width: 100%;
+  accent-color: var(--hlg-accent);
+  cursor: pointer;
+}
+
+.hlg-toggle {
+  appearance: none;
+  position: relative;
+  width: 48px;
+  height: 28px;
+  margin: 0;
+  background: var(--hlg-border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+
+.hlg-toggle::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  background: var(--hlg-text);
+  border-radius: 50%;
+  transition: transform 150ms ease;
+}
+
+.hlg-toggle:checked {
+  background: var(--hlg-accent);
+}
+
+.hlg-toggle:checked::after {
+  transform: translateX(20px);
+}
+
+.hlg-knob {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 35%, var(--hlg-surface), var(--hlg-bg));
+  border: 2px solid var(--hlg-border);
+  cursor: ns-resize;
+  touch-action: none;
+  user-select: none;
+}
+
+.hlg-color {
+  width: 48px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--hlg-border);
+  border-radius: var(--hlg-radius-small);
+  background: none;
+  cursor: pointer;
+}
+
+.hlg-xy-pad {
+  position: relative;
+  width: min(320px, 100%);
+  aspect-ratio: 1;
+  background: var(--hlg-bg-elevated);
+  border: 1px solid var(--hlg-border);
+  border-radius: var(--hlg-radius);
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.hlg-label {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.hlg-label--big {
+  font-size: clamp(1.4rem, 3.5vw, 2.2rem);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.hlg-list {
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--hlg-bg-elevated);
+  border: 1px solid var(--hlg-border);
+  border-radius: var(--hlg-radius-small);
+  max-height: 320px;
+  overflow: auto;
+  text-align: left;
+}
+
+.hlg-list > li {
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.hlg-list > li:hover {
+  background: var(--hlg-surface);
+}
+
+.hlg-list > li[aria-selected='true'] {
+  color: var(--hlg-accent-contrast);
+  background: var(--hlg-accent);
+}
+
+/* ---- piano keyboard (ui/keyboard) ------------------------------------------------ */
+
+.hlg-keyboard {
+  position: relative;
+  display: flex;
+  width: min(720px, 100%);
+  height: 160px;
+  user-select: none;
+  touch-action: none;
+}
+
+.hlg-keyboard__key {
+  flex: 1;
+  margin: 0 1px;
+  background: #f4f4f6;
+  border: 1px solid #9aa3b2;
+  border-radius: 0 0 6px 6px;
+  cursor: pointer;
+}
+
+.hlg-keyboard__key--black {
+  position: absolute;
+  z-index: 1;
+  height: 60%;
+  background: #1b1d23;
+  border-color: #000;
+}
+
+.hlg-keyboard__key[data-active='true'] {
+  background: var(--hlg-accent);
+}
+
+/* ---- visuals ------------------------------------------------------------------------ */
+
+.hlg-canvas,
+.hlg-media {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  background: #000;
+  border-radius: var(--hlg-radius);
+}
+
+.hlg-canvas--full {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  border-radius: 0;
+}
+
+.hlg-dropzone {
+  display: grid;
+  place-items: center;
+  min-height: 120px;
+  padding: 16px;
+  color: var(--hlg-text-muted);
+  border: 2px dashed var(--hlg-border);
+  border-radius: var(--hlg-radius);
+  cursor: pointer;
+}
+
+.hlg-dropzone[data-over='true'] {
+  border-color: var(--hlg-accent);
+  color: var(--hlg-text);
+}
+
+.hlg-message {
+  padding: 12px 16px;
+  color: var(--hlg-text);
+  background: var(--hlg-surface);
+  border-left: 4px solid var(--hlg-accent);
+  border-radius: var(--hlg-radius-small);
+  text-align: left;
+}
+
+.hlg-message--warning {
+  border-left-color: var(--hlg-accent-2);
+}
+
+/* ---- runtime overlays (hlg-runtime.js) ------------------------------------------------ */
+
+.hlg-start-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: color-mix(in srgb, var(--hlg-bg) 82%, transparent);
+  backdrop-filter: blur(6px);
+}
+
+.hlg-start-overlay__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  max-width: 420px;
+  padding: 32px;
+  text-align: center;
+  background: var(--hlg-surface);
+  border: 1px solid var(--hlg-border);
+  border-radius: 20px;
+  box-shadow: var(--hlg-shadow);
+}
+
+.hlg-start-overlay__title {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.hlg-start-overlay__text {
+  margin: 0;
+  color: var(--hlg-text-muted);
+}
+
+.hlg-start-overlay__button {
+  appearance: none;
+  min-height: 52px;
+  padding: 12px 32px;
+  font: inherit;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--hlg-accent-contrast);
+  background: var(--hlg-accent);
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.hlg-start-overlay__button:focus-visible {
+  outline: none;
+  box-shadow: var(--hlg-focus);
+}
+
+.hlg-error {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  left: 16px;
+  z-index: 1001;
+  max-width: 640px;
+  max-height: 40vh;
+  margin-left: auto;
+  padding: 12px 44px 12px 16px;
+  overflow: auto;
+  color: #fff;
+  background: #3a1417;
+  border: 1px solid var(--hlg-danger);
+  border-radius: var(--hlg-radius-small);
+  box-shadow: var(--hlg-shadow);
+  font-size: 0.9rem;
+  text-align: left;
+}
+
+.hlg-error__list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-family: var(--hlg-mono);
+  font-size: 0.8rem;
+}
+
+.hlg-error__close {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  width: 32px;
+  height: 32px;
+  font-size: 1.2rem;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+/* ---- small screens ------------------------------------------------------------------ */
+
+@media (max-width: 600px) {
+  :root {
+    --hlg-gap: 12px;
+  }
+
+  .hlg-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .hlg-keyboard {
+    height: 120px;
+  }
+}

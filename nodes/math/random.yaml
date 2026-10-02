@@ -1,0 +1,31 @@
+description: Random number on every trigger
+category: Math
+color: "#66bb6a"
+icon: casino
+function: |
+  Produces random numbers — dice rolls, random colours, generative melodies, glitch timing.
+approach: |
+  On every `trigger` value (bang or anything) emit a new random number in [min, max) (defaults 0..1).
+  Integers when the action says so ("dice 1–6" → inclusive integers 1..6) or when both bounds are
+  integers and the action talks about counting/choosing. A seeded PRNG (mulberry32) when the action
+  mentions a seed or "repeatable"; `Math.random()` otherwise. Distribution from the action (uniform
+  default; "gaussian", "mostly small"). Emit one value at creation unless the action says to wait for
+  the first trigger.
+deliverables: |
+  - `value`: a random number within the bounds, emitted per trigger (and once at creation).
+  - Integers include both ends when the action counts ("1–6" can produce 6); seeded sequences repeat
+    identically after a reload.
+preconditions: |
+  - `trigger` should be wired (a metro, a button `clicked`…) — otherwise only the initial value is
+    produced (info).
+  - `min` ≤ `max` (swapped with a warning otherwise).
+inputs:
+  - name: trigger
+    description: Any value (bang) produces a new random number
+  - name: min
+    description: Lower bound (default 0)
+  - name: max
+    description: Upper bound (default 1)
+outputs:
+  - name: value
+    description: The random number

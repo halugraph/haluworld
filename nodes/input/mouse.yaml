@@ -1,0 +1,28 @@
+description: Mouse / touch position over the whole page
+category: Input
+color: "#ab47bc"
+icon: mouse
+function: |
+  Follows the pointer anywhere on the page — for interactive visuals, shaders that react to the
+  mouse, theremin-style instruments.
+approach: |
+  `pointermove`/`pointerdown`/`pointerup` listeners on `window` (via `ctx.listen`), which also covers
+  touch and pen. Normalise to the viewport: x = clientX / innerWidth, y = clientY / innerHeight
+  (0..1, origin top-left; shaders flip y themselves). Coalesce moves to at most one emission per
+  animation frame. Emit initial values at creation: 0.5, 0.5, false. When the action says "over the
+  canvas" or similar, prefer the pointer output of graphics/canvas instead and note it.
+deliverables: |
+  - `x`, `y`: numbers 0..1, emitted on movement (max once per frame).
+  - `down`: boolean, true while a button/finger is down.
+preconditions: |
+  - At least one output must be wired (warning otherwise).
+  - For positions relative to a specific element (a canvas, a pad), graphics/canvas `pointer` or
+    ui/xy-pad are more precise — suggest them (info) when the action talks about "on the canvas".
+inputs: []
+outputs:
+  - name: x
+    description: Horizontal position 0 (left) .. 1 (right)
+  - name: "y"
+    description: Vertical position 0 (top) .. 1 (bottom)
+  - name: down
+    description: Boolean, true while pressed

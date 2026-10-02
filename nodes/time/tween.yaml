@@ -1,0 +1,30 @@
+description: Smoothly animates a number to each new target
+category: Time
+color: "#8d6e63"
+icon: animation
+function: |
+  Animates transitions: when a new `target` arrives, the output glides there over `duration` with an
+  easing curve — fades, slides, zooms, colour changes.
+approach: |
+  On `target`: start a tween from the current output to the target (the first target jumps
+  immediately unless the action gives a start value). Advance with `ctx.onFrame` using elapsed time;
+  emit every frame until done, then emit the exact target once. `duration` in milliseconds (default
+  500). `easing`: linear, easeIn, easeOut, easeInOut (default), cubic, elastic, bounce, back — also CSS
+  `cubic-bezier(…)` strings. A new target mid-tween starts from the current value (no jumps).
+  Arrays and CSS colours tween component-wise when the action says so.
+deliverables: |
+  - `value`: the animated number, emitted every frame while moving and exactly the target at the end.
+  - Retargeting mid-flight is smooth (continues from the current value); duration 0 jumps instantly.
+preconditions: |
+  - `target` must be wired (error otherwise).
+  - `duration` ≥ 0 (0 = jump); unknown easing names fall back to easeInOut (warning).
+inputs:
+  - name: target
+    description: The number to animate to
+  - name: duration
+    description: Tween length in milliseconds (default 500)
+  - name: easing
+    description: linear, easeIn, easeOut, easeInOut, elastic, bounce…
+outputs:
+  - name: value
+    description: The animated number, every frame while moving

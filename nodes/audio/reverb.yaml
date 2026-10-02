@@ -1,0 +1,31 @@
+description: Room / hall reverb with size and wet/dry mix
+category: Audio
+color: "#7e57c2"
+icon: blur_on
+function: |
+  Places the sound in a space — from a small room to a huge cathedral wash. Usually the last effect
+  before the dac, or on a separate "send" branch mixed back in with audio/mixer.
+approach: |
+  Web Audio `ConvolverNode` with a generated impulse response: stereo noise with an exponential decay
+  `(1 - i/n) ** decayPower`, duration 0.4 s (size 0) … 8 s (size 1), slightly different noise per
+  channel for width, plus a 10–20 ms pre-delay for larger sizes. Input → dry gain → output and input →
+  convolver → wet gain → output, equal-power `mix` crossfade (default 0.3).
+  `size` 0..1 (default 0.5): regenerate the impulse response when it changes, debounced (~150 ms),
+  crossfading between two convolvers to avoid dropouts. No external impulse files unless the action
+  asks for a specific space (then bundle the file under src/ and import it).
+deliverables: |
+  - `signal`: the reverberated output (AudioNode), emitted once at creation.
+  - A smooth, natural tail with no clicks when `size` or `mix` change.
+preconditions: |
+  - `signal` input must receive an AudioNode; the output should reach a dac/analyser.
+  - `size` and `mix` are clamped to 0..1.
+inputs:
+  - name: signal
+    description: Audio signal in (AudioNode, fan-in sums)
+  - name: size
+    description: Room size 0 (small) .. 1 (huge), default 0.5
+  - name: mix
+    description: Wet/dry balance 0..1 (default 0.3)
+outputs:
+  - name: signal
+    description: Reverberated signal (AudioNode)

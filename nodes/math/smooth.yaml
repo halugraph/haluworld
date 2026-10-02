@@ -1,0 +1,28 @@
+description: Smooths a jumpy number over time
+category: Math
+color: "#66bb6a"
+icon: gesture
+function: |
+  Makes a jittery value glide — audio level, mouse position, sensor data — for calm, organic motion.
+approach: |
+  Exponential smoothing per animation frame (frame-rate independent):
+  `y += (x - y) * (1 - amount ** (dt * 60))`, where x is the latest input and `amount` 0..0.99 is the
+  smoothing (0 = none, default 0.8). Emit y every frame while |x − y| > 1e-4; then set y = x, emit
+  that exact value once and stop emitting until the input changes (no wasted work). Arrays are smoothed element-wise when the action says so
+  (e.g. a spectrum).
+deliverables: |
+  - `value`: the smoothed number, emitted each frame while moving and silent once settled.
+  - The same smoothing feel at 30, 60 or 120 fps (frame-rate independent), no overshoot, reaches the
+    target exactly when the input stops changing.
+preconditions: |
+  - `value` input must be wired (error otherwise); non-numeric values are ignored.
+  - `amount` ≥ 1 would freeze the output — clamp to 0.99 (warning). For audio-rate smoothing use Web
+    Audio `setTargetAtTime` in the audio node instead (this node runs per frame).
+inputs:
+  - name: value
+    description: The number to smooth
+  - name: amount
+    description: Smoothing 0..0.99 (default 0.8)
+outputs:
+  - name: value
+    description: The smoothed number

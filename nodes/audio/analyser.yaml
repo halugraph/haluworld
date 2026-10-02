@@ -1,0 +1,36 @@
+description: Measures a signal every frame — spectrum, waveform and level
+category: Audio
+color: "#7e57c2"
+icon: graphic_eq
+function: |
+  Turns sound into numbers for visuals: the frequency spectrum, the waveform (oscilloscope) and the
+  overall loudness. The bridge between audio and graphics.
+approach: |
+  A Web Audio `AnalyserNode` (fftSize 2048, smoothingTimeConstant 0.8; fftSize 512 when the action
+  wants chunky bars). Every AudioNode arriving on `signal` connects to it. So that browsers keep
+  processing it, connect the analyser to a GainNode with gain 0 → destination (silent).
+  Each animation frame (`ctx.onFrame`):
+  - `spectrum`: `getByteFrequencyData` → a `Float32Array` of `frequencyBinCount` values in 0..1
+    (value / 255). Bins are linear in frequency; visualisers usually want log-spaced bands — that is
+    the consumer's job, as its action says.
+  - `waveform`: `getFloatTimeDomainData` → `Float32Array` of fftSize samples in -1..1.
+  - `level`: RMS of the waveform, 0..1 (≈ 0.7 for a full-scale sine), lightly smoothed.
+  Reuse the same typed arrays every frame (no garbage); consumers that keep data must copy it.
+deliverables: |
+  - `spectrum`, `waveform`: typed arrays updated and emitted every animation frame while running.
+  - `level`: a number emitted every frame.
+  - No audible output (the analyser is a measuring tap, not a pass-through).
+preconditions: |
+  - `signal` must receive an AudioNode (error otherwise — nothing to analyse).
+  - To HEAR the analysed audio, the source must ALSO be wired to an audio/dac (fan-out).
+  - At least one output should be consumed (canvas `draw`, chart `data`, shader `params`…).
+inputs:
+  - name: signal
+    description: Audio signal to analyse (AudioNode)
+outputs:
+  - name: spectrum
+    description: Float32Array of frequency magnitudes 0..1, every frame
+  - name: waveform
+    description: Float32Array of samples -1..1, every frame
+  - name: level
+    description: Loudness 0..1 (RMS), every frame

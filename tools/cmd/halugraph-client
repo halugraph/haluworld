@@ -1,0 +1,1445 @@
+#!/bin/sh
+"""": # halugraph-client: the lines up to the closing quotes are its sh launcher (python reads them as a string)
+# Picks a working python >= 3.8 and runs this same file with it: $HALUGRAPH_PYTHON when set, else the first
+# of python3, python, py -3 that answers the probe (which skips the Microsoft Store stubs that Windows puts
+# on the PATH as python3 / python; -S keeps it cheap). For a Windows python (Git Bash, where Claude Code runs commands on
+# Windows) it converts $0, --root, --file and $HALUGRAPH_ROOT to Windows paths with cygpath and turns MSYS's
+# own argument conversion off, which would turn text such as "/preview/latest" into a Windows path.
+hlg_probe() {
+  hlg_out=$("$@" -S -c 'import sys; sys.version_info[:2] >= (3, 8) and print("halugraph-python " + sys.platform)' </dev/null 2>/dev/null) || return 1
+  case $hlg_out in "halugraph-python "*) hlg_platform=${hlg_out#halugraph-python }; return 0;; esac
+  return 1
+}
+hlg_arg=
+if [ -n "${HALUGRAPH_PYTHON:-}" ]; then
+  hlg_py=$HALUGRAPH_PYTHON
+  hlg_probe "$hlg_py" || {
+    echo '{"error": "HALUGRAPH_PYTHON is set but does not run python 3.8 or newer", "hint": "Point HALUGRAPH_PYTHON at a python 3.8+ executable, or unset it to search python3, python and py -3."}' >&2
+    exit 127
+  }
+elif hlg_probe python3; then hlg_py=python3
+elif hlg_probe python; then hlg_py=python
+elif hlg_probe py -3; then hlg_py=py hlg_arg=-3
+else
+  echo '{"error": "no python 3.8 or newer found (tried python3, python and py -3)", "hint": "Ask the user to install Python 3.8+ (python.org; on Windows tick Add python.exe to PATH), or to set HALUGRAPH_PYTHON to a python executable."}' >&2
+  exit 127
+fi
+hlg_self=$0
+case $hlg_platform in
+  win32*)
+    if command -v cygpath >/dev/null 2>&1; then
+      hlg_win() { cygpath -w -- "$1"; }
+      case $hlg_self in /*) hlg_self=$(hlg_win "$hlg_self");; esac
+      case ${HALUGRAPH_ROOT:-} in /*) HALUGRAPH_ROOT=$(hlg_win "$HALUGRAPH_ROOT"); export HALUGRAPH_ROOT;; esac
+      hlg_n=$#
+      hlg_prev=
+      for hlg_a in "$@"; do
+        case $hlg_prev in --root|--file) case $hlg_a in /*) hlg_a=$(hlg_win "$hlg_a");; esac;; esac
+        case $hlg_a in
+          --root=/*) hlg_a=--root=$(hlg_win "${hlg_a#--root=}");;
+          --file=/*) hlg_a=--file=$(hlg_win "${hlg_a#--file=}");;
+        esac
+        set -- "$@" "$hlg_a"
+        hlg_prev=$hlg_a
+      done
+      shift "$hlg_n"
+      MSYS_NO_PATHCONV=1
+      MSYS2_ARG_CONV_EXCL='*'
+      export MSYS_NO_PATHCONV MSYS2_ARG_CONV_EXCL
+    fi;;
+esac
+exec "$hlg_py" $hlg_arg "$hlg_self" "$@"
+"""
+"""halugraph-client — the AI agent's bridge to the running halugraph server of this project.
+
+Full reference: tools/doc/halugraph-client.md. Python >= 3.8, standard library only, one file.
+
+The client finds the project root (``--root``, ``$HALUGRAPH_ROOT``, its own location
+``tools/cmd/../..``, or the nearest parent of the cwd that contains ``.hlg``), connects to the server
+over the unix socket (``util/halugraph.sock`` or the path in ``util/instance.json``) and falls back to
+TCP (``url`` in ``util/instance.json``); on Windows it always uses TCP. Results are printed as pretty
+UTF-8 JSON on stdout; failures as JSON ``{"error", "hint"}`` on stderr with exit code 1 (usage),
+2 (request failed), 3 (halugraph not running) or 130 (interrupted: Ctrl+C, or Ctrl+Break on Windows).
+The sh lines above this docstring make the file its own launcher (spec §10): ``tools/cmd/halugraph-client``
+works in sh / bash / Git Bash, ``tools/cmd/halugraph-client.cmd`` in cmd.exe / PowerShell.
+"""
+import argparse
+import http.client
+import json
+import math
+import os
+import re
+import shlex
+import signal
+import socket
+import stat
+import sys
+import textwrap
+import threading
+import time
+from urllib.parse import quote, urlencode, urlsplit
+
+CLIENT_VERSION = '0.1.0'
+PROG = 'tools/cmd/halugraph-client'
+DOC_PATH = 'tools/doc/halugraph-client.md'
+
+EXIT_OK = 0
+EXIT_USAGE = 1
+EXIT_REQUEST = 2
+EXIT_NOT_RUNNING = 3
+EXIT_INTERRUPTED = 130
+
+DEFAULT_TIMEOUT = 30      # socket timeout (s) for ordinary requests
+DEFAULT_WAIT = 540        # default long-poll (s) for wait / ask / dialog / dialog-wait
+MAX_WAIT = 3600           # the server clamps long-polls to this; so does the client (keeps timeouts sane)
+MAX_BODY = 10 * 1024 * 1024  # the server rejects larger request bodies (413)
+MAX_INSTANCE_BYTES = 1024 * 1024  # util/instance.json: halugraph writes a few hundred bytes
+TIMEOUT_MARGIN = 30       # long-poll socket timeout = requested seconds + this margin
+POLL_FIRST = 0.2          # ping --wait: first pause between attempts (s); doubles up to POLL_MAX
+POLL_MAX = 1.0
+POLL_MIN_TIMEOUT = 1.0    # ping --wait: an attempt's socket timeout never drops below this (s)
+INTERRUPTIBLE_REQUESTS = sys.platform == 'win32'  # run requests in a worker thread (see interruptible())
+INTERRUPT_SLICE = 0.1     # the main thread's wait slice while a request runs in the worker (s)
+
+AGENT_HEADER = 'x-halugraph-client'
+AGENT_VALUE = 'agent'
+MARKER = '.hlg'
+DEFAULT_ASK_TITLE = 'Question from the agent'
+PENDING_HINT = "the answer will arrive via wait as an 'answer' event"
+
+LEVELS = ('info', 'success', 'warning', 'error')
+STATES = ('idle', 'busy', 'done', 'error')
+SEVERITIES = ('error', 'warning', 'info')
+LOG_LEVELS = ('debug', 'info', 'warning', 'error')
+SIDES = ('input', 'output')
+
+
+# ---------------------------------------------------------------------------
+# Errors
+# ---------------------------------------------------------------------------
+
+
+class ClientError(Exception):
+    """A failure that ends the command with ``exit_code`` and prints ``{"error", "hint"}`` on stderr."""
+
+    def __init__(self, exit_code, error, hint=None, status=None):
+        Exception.__init__(self, error)
+        self.exit_code = exit_code
+        self.error = error
+        self.hint = hint or ''
+        self.status = status
+
+    def payload(self):
+        """The JSON object printed on stderr."""
+        data = {'error': self.error, 'hint': self.hint}
+        if self.status is not None:
+            data['status'] = self.status
+        return data
+
+
+class RequestTimeout(ClientError):
+    """The server accepted the connection but did not answer in time (exit 2; ``ping --wait`` retries)."""
+
+
+def usage_error(message, hint=None):
+    """Build an exit-code-1 error (bad command line, unreadable input file, no project found)."""
+    return ClientError(EXIT_USAGE, message, hint or 'Run `%s --help` or read %s.' % (PROG, DOC_PATH))
+
+
+_SAFE_WINDOWS_WORD = re.compile(r'^[A-Za-z0-9_.,:=@+\\/-]+$')
+
+
+def shell_quote(text, platform=sys.platform):
+    """Quote ``text`` for the user's shell: POSIX quoting, or on Windows "…" (read the same way by cmd.exe,
+    PowerShell and Git Bash for a Windows path, which cannot contain a double quote)."""
+    if platform != 'win32':
+        return shlex.quote(text)
+    return text if _SAFE_WINDOWS_WORD.match(text) else '"%s"' % text
+
+
+def not_running_hint(root):
+    """The standard hint when the server for ``root`` cannot be reached."""
+    return 'halugraph is not running for %s. Ask the user to start it: halugraph %s' % (root, shell_quote(root))
+
+
+def not_running(root, message):
+    """Build an exit-code-3 error."""
+    return ClientError(EXIT_NOT_RUNNING, message, not_running_hint(root))
+
+
+def in_network_sandbox(env):
+    """True inside Codex's sandbox without network (it sets CODEX_SANDBOX_NETWORK_DISABLED=1)."""
+    return env.get('CODEX_SANDBOX_NETWORK_DISABLED') == '1'
+
+
+SANDBOX_HINT = ('Codex ran this command inside its sandbox, which blocks connections to halugraph on this computer. '
+                '.codex/rules/halugraph.rules lets this client out of the sandbox, but Codex loads it only for a '
+                'trusted project folder: ask the user to quit Codex, start it again in the project folder and answer '
+                'its "trust this folder" question with yes. halugraph cannot be reached until then, so do not wait for '
+                'it with ping --wait.')
+
+
+def sandboxed(error):
+    """An exit-3 conclusion made inside the sandbox (a pid from another PID namespace looks dead, connections
+    are refused) says nothing about halugraph: report the sandbox instead (exit 2)."""
+    return ClientError(EXIT_REQUEST, 'cannot reach halugraph from inside the Codex sandbox (%s)' % error.error,
+                       SANDBOX_HINT)
+
+
+def _status_hint(status):
+    if status == 400:
+        return 'halugraph rejected the request; check the arguments (see %s).' % DOC_PATH
+    if status == 404:
+        return 'Not found: check the name or id (list them with: graphs, nodes, compile list, events).'
+    if status == 409:
+        return 'Conflict: the target is not in a state that allows this (e.g. the dialog is no longer open).'
+    if status == 413:
+        return 'The request is too large (the server accepts at most 10 MB).'
+    if status == 415:
+        return 'Requests must be JSON. This is a halugraph-client bug; tell the user.'
+    if status >= 500:
+        return 'halugraph failed internally. Tell the user and include this error.'
+    return 'See %s.' % DOC_PATH
+
+
+# ---------------------------------------------------------------------------
+# Project root discovery
+# ---------------------------------------------------------------------------
+
+
+def _has_marker(path):
+    return os.path.isfile(os.path.join(path, MARKER))
+
+
+_MSYS_DRIVE = re.compile(r'^/(?:cygdrive/)?([A-Za-z])(?=/|$)')
+
+
+def native_path(path, platform=sys.platform):
+    """On Windows, an MSYS / Cygwin drive path (``/c/Users/me``, ``/cygdrive/c/x``) — what Git Bash users
+    type — becomes ``C:\\Users\\me``. Anything else, and every path on other platforms, is unchanged."""
+    match = _MSYS_DRIVE.match(path) if platform == 'win32' else None
+    if match is None:
+        return path
+    return match.group(1).upper() + ':\\' + path[match.end():].lstrip('/').replace('/', '\\')
+
+
+def _explicit_root(path, source, cwd):
+    root = os.path.normpath(os.path.join(cwd, os.path.expanduser(native_path(path))))
+    if not os.path.isdir(root):
+        raise usage_error('%s points to a folder that does not exist: %s' % (source, root),
+                          'Pass the halugraph project root (the folder that contains .hlg).')
+    if not _has_marker(root):
+        raise usage_error('%s is not a halugraph project (no .hlg file in %s)' % (source, root),
+                          'Pass the project root itself (the folder that contains .hlg), not a subfolder.')
+    return root
+
+
+def _script_roots(script_path):
+    roots = []
+    for resolved in (os.path.abspath(script_path), os.path.realpath(script_path)):
+        root = os.path.dirname(os.path.dirname(os.path.dirname(resolved)))  # tools/cmd/<script> → root
+        if root not in roots:
+            roots.append(root)
+    return roots
+
+
+def find_root(explicit=None, env=None, script_path=None, cwd=None):
+    """Return the absolute project root.
+
+    Order: ``explicit`` (--root), ``env['HALUGRAPH_ROOT']``, the script's own location
+    (``tools/cmd/../..`` when it contains ``.hlg``), then the cwd and its parents. Raises an
+    exit-code-1 ClientError when nothing is found or an explicit root is not a project.
+    """
+    env = os.environ if env is None else env
+    cwd = _getcwd() if cwd is None else cwd
+    if explicit:
+        return _explicit_root(explicit, '--root', cwd)
+    if env.get('HALUGRAPH_ROOT'):
+        return _explicit_root(env['HALUGRAPH_ROOT'], 'HALUGRAPH_ROOT', cwd)
+    for root in _script_roots(script_path or __file__):
+        if _has_marker(root):
+            return root
+    current = os.path.normpath(os.path.join(os.sep, cwd))
+    while True:
+        if _has_marker(current):
+            return current
+        parent = os.path.dirname(current)
+        if parent == current:
+            break
+        current = parent
+    raise usage_error('no halugraph project found (no .hlg file in %s or any parent folder)' % cwd,
+                      'Run this from inside the project folder, pass --root <project>, or set HALUGRAPH_ROOT. '
+                      'A new project is created by the user with: halugraph <folder>')
+
+
+def _getcwd():
+    try:
+        return os.getcwd()
+    except OSError:  # the cwd was deleted
+        return os.sep
+
+
+# ---------------------------------------------------------------------------
+# Connecting
+# ---------------------------------------------------------------------------
+
+
+def read_instance(root):
+    """Return the parsed ``util/instance.json`` of ``root`` or None (missing / unreadable / not an object).
+
+    Only a regular file of a sane size is read: a FIFO would block the read forever and a link to an endless
+    device (``/dev/zero``) would never end it."""
+    path = os.path.join(root, 'util', 'instance.json')
+    try:
+        info = os.stat(path)
+        if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_INSTANCE_BYTES:
+            return None
+        with open(path, encoding='utf-8') as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def instance_matches(root, instance):
+    """True when instance.json was written for this project root (spec §5.2 always includes ``root``).
+
+    A project folder copied while halugraph runs carries the original's instance.json; following it would
+    connect the agent to the ORIGINAL project's server. ``samefile`` tolerates symlinks and case-insensitive
+    filesystems.
+    """
+    other = instance.get('root') if isinstance(instance, dict) else None
+    if not isinstance(other, str) or not other:
+        return False
+    try:
+        return os.path.samefile(root, other)
+    except (OSError, ValueError):
+        return False
+
+
+def _distrust_reason(instance):
+    other = instance.get('root')
+    if isinstance(other, str) and other:
+        return ('util/instance.json belongs to another project (%s); this folder was probably copied while '
+                'halugraph was running' % other)
+    return 'util/instance.json has no "root", so it was not written by halugraph'
+
+
+def is_local_address(host):
+    """True when ``host`` is this machine: ``localhost``, a loopback address or an address of a local
+    interface (probed by binding to it). The TCP fallback never connects anywhere else, so an
+    instance.json committed into a cloned project cannot route the agent to a remote server."""
+    if host == 'localhost':
+        return True
+    if not host:
+        return False
+    try:
+        infos = socket.getaddrinfo(host, None, 0, socket.SOCK_STREAM)
+    except (OSError, UnicodeError, ValueError):
+        return False
+    for family, _, _, _, address in infos:
+        try:
+            probe = socket.socket(family, socket.SOCK_STREAM)
+        except OSError:
+            continue
+        try:
+            probe.bind((address[0], 0) + tuple(address[2:]))
+            return True
+        except OSError:
+            continue
+        finally:
+            probe.close()
+    return False
+
+
+def unix_sockets_available(platform=sys.platform):
+    """Whether to try unix sockets at all. Never on Windows (spec §10: halugraph listens on a named pipe
+    there, and CPython's AF_UNIX support on Windows is missing or unreliable), nor without AF_UNIX."""
+    return platform != 'win32' and hasattr(socket, 'AF_UNIX')
+
+
+_NAMED_PIPE = re.compile(r'^[\\/][\\/][.?][\\/]pipe[\\/]', re.I)
+
+
+def socket_candidates(root, instance):
+    """Unix socket paths to try, in order: instance.json ``socket``, then ``util/halugraph.sock``. A Windows
+    named pipe (``\\\\.\\pipe\\…``, what halugraph records there) is not a unix socket and is skipped."""
+    paths = []
+    sock = instance.get('socket') if isinstance(instance, dict) else None
+    if isinstance(sock, str) and sock and not _NAMED_PIPE.match(sock):
+        paths.append(os.path.join(root, sock))
+    default = os.path.join(root, 'util', 'halugraph.sock')
+    if default not in paths:
+        paths.append(default)
+    return paths
+
+
+def tcp_target(instance):
+    """Return ``(host, port)`` from instance.json (``url``, else ``host`` + ``port``) or None."""
+    if not isinstance(instance, dict):
+        return None
+    host, port = None, None
+    url = instance.get('url')
+    if isinstance(url, str) and url:
+        try:
+            parts = urlsplit(url)
+            if parts.scheme == 'http' and parts.hostname:
+                host, port = parts.hostname, parts.port or 80
+        except ValueError:
+            host, port = None, None
+    if host is None:
+        h, p = instance.get('host'), instance.get('port')
+        if isinstance(h, str) and h and isinstance(p, int) and not isinstance(p, bool):
+            host, port = h, p
+    if host is None or not (0 < port < 65536):
+        return None
+    if host in ('0.0.0.0', '::'):
+        host = '127.0.0.1'
+    return host, port
+
+
+def pid_is_dead(pid):
+    """True when ``pid`` names a process of this machine that no longer exists. Anything uncertain (no
+    permission, a nonsense pid, an unknown platform) counts as alive, so the client just tries to connect."""
+    if not isinstance(pid, int) or isinstance(pid, bool) or not 0 < pid < 2 ** 32:
+        return False
+    if os.name == 'nt':
+        return _windows_pid_is_dead(pid)
+    if os.name != 'posix':
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    except (OSError, OverflowError, ValueError):
+        return False
+    return False
+
+
+def _windows_pid_is_dead(pid):
+    """OpenProcess + GetExitCodeProcess (os.kill(pid, 0) would TERMINATE the process on Windows)."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+        kernel32.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+        kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+        handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return ctypes.get_last_error() == 87  # ERROR_INVALID_PARAMETER: no process has this id
+        try:
+            code = wintypes.DWORD()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return False
+            return code.value != 259  # STILL_ACTIVE; an exited process lingers while someone holds a handle
+        finally:
+            kernel32.CloseHandle(handle)
+    except (ImportError, AttributeError, OSError, ValueError):
+        return False
+
+
+def _pid_is_dead(instance):
+    """True when instance.json names a local process that no longer exists (a stale file)."""
+    return pid_is_dead(instance.get('pid'))
+
+
+class UnixHTTPConnection(http.client.HTTPConnection):
+    """HTTP over a unix domain socket (the server's ``util/halugraph.sock``)."""
+
+    def __init__(self, path, timeout=DEFAULT_TIMEOUT):
+        http.client.HTTPConnection.__init__(self, 'localhost', timeout=timeout)
+        self.socket_path = path
+
+    def connect(self):
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            sock.settimeout(self.timeout)
+            sock.connect(self.socket_path)
+        except BaseException:
+            sock.close()
+            raise
+        self.sock = sock
+
+
+TCPConnection = http.client.HTTPConnection
+
+
+def wire_text(value):
+    """Make ``value`` encodable as UTF-8 for the request.
+
+    Command-line bytes that are not UTF-8 reach python as surrogate escapes (``'\\udcff'``); they become
+    U+FFFD instead of crashing the JSON / URL encoding. File paths keep their surrogates (the OS needs them).
+    """
+    try:
+        value.encode('utf-8')
+        return value
+    except UnicodeEncodeError:
+        try:
+            return value.encode('utf-8', 'surrogateescape').decode('utf-8', 'replace')
+        except UnicodeEncodeError:  # a lone surrogate that is not an escaped byte
+            return ''.join('\ufffd' if 0xD800 <= ord(c) <= 0xDFFF else c for c in value)
+
+
+def _encode_query(query):
+    pairs = [(k, wire_text(v) if isinstance(v, str) else _number(v)) for k, v in query.items() if v is not None]
+    return urlencode(pairs, quote_via=quote, safe='/')
+
+
+def _segment(value):
+    return quote(wire_text(value), safe='')
+
+
+def _json_bytes(body):
+    return wire_text(json.dumps(body, ensure_ascii=False)).encode('utf-8')
+
+
+def _snippet(text, limit=300):
+    text = ' '.join(text.split())
+    return text if len(text) <= limit else text[:limit] + '…'
+
+
+class Client(object):
+    """Talks to the halugraph server of one project. ``via`` is 'unix' or 'tcp' after a request."""
+
+    def __init__(self, root, env=None):
+        self.root = root
+        self.via = None
+        self.env = os.environ if env is None else env
+
+    def _connect(self, timeout):
+        try:
+            return self._open(timeout)
+        except ClientError as exc:
+            if exc.exit_code == EXIT_NOT_RUNNING and in_network_sandbox(self.env):
+                raise sandboxed(exc)
+            raise
+
+    def _open(self, timeout):
+        instance = read_instance(self.root)
+        distrust = None
+        if instance is not None and not instance_matches(self.root, instance):
+            distrust, instance = _distrust_reason(instance), None
+        for path in socket_candidates(self.root, instance) if unix_sockets_available() else []:
+            if not os.path.exists(path):
+                continue
+            conn = UnixHTTPConnection(path, timeout=timeout)
+            try:
+                conn.connect()
+            except OSError:
+                conn.close()
+                continue  # stale socket file → try the next one / TCP
+            self.via = 'unix'
+            return conn
+        if distrust is not None:
+            raise not_running(self.root, 'cannot reach halugraph: ' + distrust)
+        if instance is None:
+            state = 'unreadable' if os.path.exists(os.path.join(self.root, 'util', 'instance.json')) else 'missing'
+            raise not_running(self.root, 'cannot reach halugraph: no live socket and util/instance.json is %s' % state)
+        target = tcp_target(instance)
+        if target is None:
+            raise not_running(self.root, 'cannot reach halugraph: util/instance.json has no usable url/host/port')
+        if _pid_is_dead(instance):
+            raise not_running(self.root, 'util/instance.json is stale: halugraph process %s is gone'
+                              % instance.get('pid'))
+        if not is_local_address(target[0]):
+            raise not_running(self.root, 'cannot reach halugraph: util/instance.json points to %s, which is not '
+                              'an address of this machine' % target[0])
+        conn = TCPConnection(target[0], target[1], timeout=timeout)
+        try:
+            conn.connect()
+        except OSError as exc:
+            conn.close()
+            raise not_running(self.root, 'cannot connect to halugraph at %s:%s (%s)'
+                              % (target[0], target[1], getattr(exc, 'strerror', None) or exc))
+        self.via = 'tcp'
+        return conn
+
+    def request(self, method, path, query=None, body=None, timeout=DEFAULT_TIMEOUT):
+        """Send one request and return the decoded JSON (``{"ok": true}`` for an empty 2xx body).
+
+        Raises ClientError: exit 1 for a body over the server's 10 MB limit (checked before connecting),
+        exit 2 for HTTP errors / timeouts / bad JSON, exit 3 when unreachable. KeyboardInterrupt (Ctrl+C)
+        arrives at once on every platform (see interruptible()).
+        """
+        return interruptible(lambda: self._request(method, path, query, body, timeout))
+
+    def _request(self, method, path, query, body, timeout):
+        url = path + ('?' + _encode_query(query) if query else '')
+        headers = {AGENT_HEADER: AGENT_VALUE, 'Accept': 'application/json',
+                   'User-Agent': 'halugraph-client/' + CLIENT_VERSION}
+        data = None
+        if method in ('POST', 'PUT', 'PATCH', 'DELETE'):
+            data = b'' if body is None else _json_bytes(body)
+            headers['Content-Type'] = 'application/json'
+            headers['Content-Length'] = str(len(data))
+            if len(data) > MAX_BODY:
+                raise usage_error('the request is %.1f MB; halugraph accepts at most 10 MB' % (len(data) / 1048576.0),
+                                  'Shorten the text (e.g. show a summary in the dialog and keep details in a file).')
+        conn = self._connect(timeout)
+        try:
+            conn.request(method, url, body=data or None, headers=headers)
+            response = conn.getresponse()
+            status, raw = response.status, response.read()
+        except socket.timeout:
+            raise RequestTimeout(EXIT_REQUEST, 'request timed out after %s s (%s %s)' % (_number(timeout), method, path),
+                                 'halugraph did not answer in time. Retry; if it keeps happening ask the user '
+                                 'whether halugraph is still running.')
+        except (http.client.RemoteDisconnected, ConnectionError, http.client.IncompleteRead):
+            raise not_running(self.root, 'the connection to halugraph was closed before it answered (%s %s)'
+                              % (method, path))
+        except (http.client.HTTPException, OSError) as exc:
+            raise ClientError(EXIT_REQUEST, 'request failed (%s %s): %s' % (method, path, exc),
+                              'Retry once; if it fails again tell the user.')
+        finally:
+            conn.close()
+        return _decode_response(status, raw)
+
+
+def interruptible(call, enabled=None):
+    """Return ``call()``. With ``enabled`` (default INTERRUPTIBLE_REQUESTS, i.e. on Windows) it runs in a
+    daemon worker thread while the main thread waits in short slices: Windows delivers Ctrl+C to a thread
+    blocked in recv() only when recv returns — up to 570 s into a ``wait`` — but to a waiting main thread
+    within a slice. The call's exception (or result) is passed on unchanged."""
+    if not (INTERRUPTIBLE_REQUESTS if enabled is None else enabled):
+        return call()
+    box = {}
+
+    def work():
+        try:
+            box['result'] = call()
+        except BaseException as exc:  # handed to the main thread below
+            box['error'] = exc
+
+    worker = threading.Thread(target=work, name='halugraph-client request')
+    worker.daemon = True  # an interrupted request must not keep the process alive
+    worker.start()
+    while worker.is_alive():
+        worker.join(INTERRUPT_SLICE)
+    if 'error' in box:
+        raise box['error']
+    return box.get('result')
+
+
+def _raise_interrupt(signum, frame):
+    raise KeyboardInterrupt()
+
+
+def interrupt_on_ctrl_break(signal_module=signal, platform=sys.platform):
+    """On Windows, Ctrl+Break (SIGBREAK — also what a parent sends a console process group) ends the client
+    like Ctrl+C: exit 130, quietly. By default Windows would kill it with STATUS_CONTROL_C_EXIT."""
+    sigbreak = getattr(signal_module, 'SIGBREAK', None)
+    if platform == 'win32' and sigbreak is not None:
+        signal_module.signal(sigbreak, _raise_interrupt)
+
+
+def utf8_output(streams, env):
+    """Switch text streams to UTF-8 (keeping their error handler) unless PYTHONIOENCODING chose an encoding:
+    a Windows console / pipe defaults to the ANSI code page (cp1252 …), which would write "é" as a byte the
+    agent's UTF-8 reader cannot decode. Streams that are closed, already UTF-8 or not reconfigurable are
+    left alone."""
+    if env.get('PYTHONIOENCODING'):
+        return
+    for stream in streams:
+        encoding = getattr(stream, 'encoding', None) if stream is not None else None
+        if not encoding or encoding.lower().replace('_', '-') in ('utf-8', 'utf8'):
+            continue
+        try:
+            stream.reconfigure(encoding='utf-8')
+        except (AttributeError, ValueError, OSError, LookupError):
+            pass
+
+
+_INVALID = object()
+
+
+def _decode_response(status, raw):
+    text = raw.decode('utf-8', 'replace')
+    data = None
+    if text.strip():
+        try:
+            data = json.loads(text)
+        except ValueError:
+            data = _INVALID
+    if 200 <= status < 300:
+        if data is None:
+            return {'ok': True}
+        if data is _INVALID:
+            raise ClientError(EXIT_REQUEST, 'halugraph returned invalid JSON (HTTP %d): %s' % (status, _snippet(text)),
+                              'This is unexpected; tell the user.', status=status)
+        return data
+    error = hint = None
+    if isinstance(data, dict):
+        error = data.get('error') if isinstance(data.get('error'), str) else None
+        hint = data.get('hint') if isinstance(data.get('hint'), str) else None
+    if not error:
+        error = 'HTTP %d %s: %s' % (status, http.client.responses.get(status, ''), _snippet(text) or '(empty body)')
+    raise ClientError(EXIT_REQUEST, error, hint or _status_hint(status), status=status)
+
+
+# ---------------------------------------------------------------------------
+# Argument types
+# ---------------------------------------------------------------------------
+
+
+def _number(value):
+    """Integral floats become ints so JSON bodies read ``540`` instead of ``540.0``."""
+    return int(value) if isinstance(value, float) and value.is_integer() else value
+
+
+def _finite(text):
+    try:
+        value = float(text)
+    except (TypeError, ValueError):
+        return None
+    return value if math.isfinite(value) else None
+
+
+def seconds(text):
+    """argparse type: a finite number of seconds >= 0, capped at MAX_WAIT (the server's own cap)."""
+    value = _finite(text)
+    if value is None or value < 0:
+        raise argparse.ArgumentTypeError('expected seconds >= 0, got %r' % text)
+    return _number(min(value, MAX_WAIT))
+
+
+def fraction(text):
+    """argparse type: progress as a fraction 0..1."""
+    value = _finite(text)
+    if value is None or not 0 <= value <= 1:
+        raise argparse.ArgumentTypeError('expected a fraction between 0 and 1 (e.g. 0.5), got %r' % text)
+    return _number(value)
+
+
+def line_number(text):
+    """argparse type: a 1-based line number."""
+    try:
+        value = int(text)
+    except (TypeError, ValueError):
+        value = 0
+    if value < 1:
+        raise argparse.ArgumentTypeError('expected a line number >= 1, got %r' % text)
+    return value
+
+
+# ---------------------------------------------------------------------------
+# Commands → requests
+#
+# One ``plan_<command>(args) -> Plan`` per (sub)command, wired up in build_parser() with
+# ``set_defaults(plan=…)``. Plans validate their arguments (usage errors, exit 1) and never do I/O except
+# reading ``dialog --file``; run() sends the Plan and prints the (optionally transformed) result.
+# ---------------------------------------------------------------------------
+
+
+class Plan(object):
+    """One HTTP request derived from the command line, plus an optional result transform.
+
+    ``poll`` (seconds, ``ping --wait``) retries the request until halugraph answers or the time is up.
+    """
+
+    def __init__(self, method, path, query=None, body=None, timeout=DEFAULT_TIMEOUT, transform=None, poll=None):
+        self.method = method
+        self.path = path
+        self.query = query
+        self.body = body
+        self.timeout = timeout
+        self.transform = transform
+        self.poll = poll
+
+    def __repr__(self):
+        return 'Plan(%s %s %r %r timeout=%r poll=%r)' % (self.method, self.path, self.query, self.body, self.timeout,
+                                                         self.poll)
+
+
+def _long_poll(wait_seconds):
+    return wait_seconds + TIMEOUT_MARGIN
+
+
+def _words(words, name):
+    text = ' '.join(words or [])
+    if not text.strip():
+        raise usage_error('%s must not be empty' % name)
+    return text
+
+
+def _required(value, name):
+    if value is None or not value.strip():
+        raise usage_error('%s must not be empty' % name)
+    return value
+
+
+def _labels(values, flag):
+    return [_required(v, flag) for v in values]
+
+
+def _optional(body, key, value):
+    if value is not None:
+        body[key] = value
+    return body
+
+
+def _read_markdown(path, cwd):
+    if path != '-':
+        path = native_path(path)
+    if path == '-':
+        try:
+            stream = getattr(sys.stdin, 'buffer', sys.stdin)
+            raw = stream.read()
+        except (AttributeError, OSError, ValueError):  # stdin closed (`<&-`) or unreadable
+            raise usage_error('cannot read --file - : stdin is closed or unreadable',
+                              'Pipe the markdown into the client, or pass --file <path> / --markdown <text>.')
+    else:
+        full = os.path.join(cwd, os.path.expanduser(path))
+        try:
+            with open(full, 'rb') as f:
+                raw = f.read()
+        except OSError as exc:
+            raise usage_error('cannot read --file %s: %s' % (path, exc.strerror or exc),
+                              'Pass an existing markdown file (paths are relative to the current folder).')
+    if isinstance(raw, str):
+        return raw
+    try:
+        return raw.decode('utf-8-sig')
+    except UnicodeDecodeError:
+        raise usage_error('--file %s is not UTF-8 text' % path, 'Save the markdown file as UTF-8.')
+
+
+def plan_hello(args):
+    return Plan('POST', '/api/agent/hello', body=_optional({}, 'name', args.name))
+
+
+def plan_wait(args):
+    return Plan('POST', '/api/agent/wait', body={'timeout': args.timeout}, timeout=_long_poll(args.timeout))
+
+
+def ask_result(data, client=None):
+    """Map a DialogResponse to ``{"status": "answered"|"pending"|"cancelled", ...}``."""
+    dialog = data.get('dialog') if isinstance(data, dict) else None
+    if not isinstance(dialog, dict):
+        raise ClientError(EXIT_REQUEST,
+                          'unexpected response from halugraph (no dialog): %s' % _snippet(json.dumps(data)),
+                          'This is unexpected; tell the user.')
+    state, dialog_id = dialog.get('state'), dialog.get('id')
+    if state == 'answered':
+        answer = dialog.get('answer') if isinstance(dialog.get('answer'), dict) else {}
+        return {'status': 'answered', 'action': answer.get('action'), 'text': answer.get('text'), 'dialogId': dialog_id}
+    if state == 'cancelled':
+        return {'status': 'cancelled', 'dialogId': dialog_id}
+    return {'status': 'pending', 'dialogId': dialog_id, 'hint': PENDING_HINT}
+
+
+def plan_ask(args):
+    question = _words(args.question, 'QUESTION')
+    choices = _labels(args.choice or [], '--choice')
+    if choices:
+        actions, with_input = choices, bool(args.input)
+    else:
+        with_input = args.input is not False
+        actions = ['Submit'] if with_input else ['OK']
+    title = args.title if args.title and args.title.strip() else DEFAULT_ASK_TITLE
+    body = {'title': title, 'markdown': question, 'actions': actions, 'input': {} if with_input else None,
+            'wait': args.timeout}
+    return Plan('POST', '/api/dialogs', body=body, timeout=_long_poll(args.timeout), transform=ask_result)
+
+
+def plan_dialog(args):
+    title = _required(args.title, '--title')
+    markdown = args.markdown if args.markdown is not None else _read_markdown(args.file, args.cwd)
+    actions = _labels(args.action, '--action') if args.action else ['OK']
+    wait = 0 if args.no_wait else args.timeout
+    body = {'title': title, 'markdown': markdown, 'actions': actions, 'input': {} if args.input else None,
+            'wait': wait}
+    return Plan('POST', '/api/dialogs', body=body, timeout=_long_poll(wait))
+
+
+def plan_dialog_wait(args):
+    dialog_id = _required(args.id, 'ID')
+    return Plan('GET', '/api/dialogs/' + _segment(dialog_id), query={'wait': args.timeout},
+                timeout=_long_poll(args.timeout))
+
+
+def plan_dialog_cancel(args):
+    return Plan('DELETE', '/api/dialogs/' + _segment(_required(args.id, 'ID')))
+
+
+def plan_notify(args):
+    body = {'message': _words(args.message, 'MESSAGE')}
+    _optional(body, 'level', args.level)
+    _optional(body, 'title', args.title)
+    return Plan('POST', '/api/agent/notify', body=body)
+
+
+def plan_status(args):
+    key = _required(args.key, 'KEY')
+    if args.clear:
+        if args.text:
+            raise usage_error('status KEY --clear takes no TEXT', 'Use: %s status %s --clear' % (PROG, key))
+        return Plan('DELETE', '/api/agent/status/' + _segment(key))
+    if not args.text:
+        raise usage_error('status needs TEXT (or --clear to remove the status)',
+                          'Example: %s status build "Bundling the app…" --state busy --progress 0.5' % PROG)
+    body = {'key': key, 'text': _words(args.text, 'TEXT')}
+    _optional(body, 'state', args.state)
+    _optional(body, 'progress', args.progress)
+    return Plan('POST', '/api/agent/status', body=body)
+
+
+def diagnostic_from_args(args):
+    """Build one DiagnosticInput from the ``error`` command's flags."""
+    diag = {'message': _words(args.message, 'MESSAGE')}
+    _optional(diag, 'severity', args.severity)
+    _optional(diag, 'code', args.code or None)
+    _optional(diag, 'graph', args.graph or None)
+    _optional(diag, 'node', args.node or None)
+    if args.port:
+        port = {'side': args.side or 'input'}
+        match = re.match(r'^#([0-9]+)$', args.port)
+        if match:
+            port['index'] = int(match.group(1))
+        else:
+            port['name'] = args.port
+        diag['port'] = port
+    _optional(diag, 'nodeType', args.node_type or None)
+    _optional(diag, 'file', args.file or None)
+    _optional(diag, 'line', args.line)
+    _optional(diag, 'compileId', args.compile or None)
+    return diag
+
+
+def plan_error(args):
+    return Plan('POST', '/api/diagnostics', body={'diagnostics': [diagnostic_from_args(args)]})
+
+
+def plan_errors_list(args):
+    return Plan('GET', '/api/diagnostics')
+
+
+def _compile_filter(value):
+    """``--compile ID`` narrows an operation: an empty ID must not silently widen it (e.g. clear everything)."""
+    return None if value is None else _required(value, '--compile')
+
+
+def plan_errors_clear(args):
+    compile_id = _compile_filter(args.compile)
+    return Plan('DELETE', '/api/diagnostics', query={'compileId': compile_id} if compile_id else None)
+
+
+def plan_log(args):
+    body = {'text': _words(args.text, 'TEXT')}
+    _optional(body, 'level', args.level)
+    return Plan('POST', '/api/agent/log', body=body)
+
+
+def plan_compile_start(args):
+    return Plan('POST', '/api/compile/start', body={'id': _required(args.id, 'ID')})
+
+
+def plan_compile_progress(args):
+    body = {'id': _required(args.id, 'ID'), 'text': _words(args.text, 'TEXT')}
+    _optional(body, 'progress', args.progress)
+    return Plan('POST', '/api/compile/progress', body=body)
+
+
+def plan_compile_done(args):
+    body = {'id': _required(args.id, 'ID'), 'status': 'failed' if args.failed else 'succeeded'}
+    _optional(body, 'summary', args.summary)
+    return Plan('POST', '/api/compile/done', body=body)
+
+
+def plan_compile_list(args):
+    return Plan('GET', '/api/compiles')
+
+
+def plan_info(args):
+    return Plan('GET', '/api/project')
+
+
+def plan_graphs(args):
+    return Plan('GET', '/api/graphs')
+
+
+def plan_nodes(args):
+    return Plan('GET', '/api/nodes')
+
+
+def plan_graph(args):
+    name = _required(args.name, 'NAME')
+    compile_id = _compile_filter(args.compile)
+    if args.resolved or compile_id:
+        query = {'name': name}
+        _optional(query, 'compile', compile_id)
+        return Plan('GET', '/api/resolved', query=query)
+    return Plan('GET', '/api/graph', query={'name': name})
+
+
+def plan_node(args):
+    return Plan('GET', '/api/node', query={'name': _required(args.name, 'NAME')})
+
+
+def plan_validate(args):
+    return Plan('GET', '/api/validate', query={'graph': args.graph} if args.graph else None)
+
+
+def plan_events(args):
+    return Plan('GET', '/api/agent/events')
+
+
+def ping_result(data, client=None):
+    """Summarize GET /api/project as ``{"ok": true, "url", "root", "via"}`` (+ ``"waited"`` after ``--wait``)."""
+    data = data if isinstance(data, dict) else {}
+    result = {'ok': True, 'url': data.get('url'), 'root': data.get('root'), 'via': client.via if client else None}
+    waited = getattr(client, 'waited', None)
+    if waited is not None:
+        result['waited'] = waited
+    return result
+
+
+def plan_ping(args):
+    return Plan('GET', '/api/project', transform=ping_result, poll=getattr(args, 'wait', None))
+
+
+def request_until_up(client, plan, clock=None, sleep=None):
+    """Send ``plan`` until halugraph answers or ``plan.poll`` seconds pass (``ping --wait``).
+
+    "Not running" (exit 3) and request timeouts mean "not up yet": the request is retried after a pause
+    that starts at POLL_FIRST and doubles up to POLL_MAX, never sleeping past the deadline. Each attempt's
+    socket timeout is the time left (at least POLL_MIN_TIMEOUT, at most the plan's timeout). Any other
+    failure — an HTTP error is an answer — is raised at once. When the time is up, raises exit 3 naming the
+    last reason. On success ``client.waited`` holds the seconds spent (one decimal).
+    """
+    clock = clock or time.monotonic
+    sleep = sleep or time.sleep
+    started = clock()
+    deadline = started + plan.poll
+    pause = POLL_FIRST
+    while True:
+        left = deadline - clock()
+        timeout = min(plan.timeout, max(left, POLL_MIN_TIMEOUT))
+        try:
+            data = client.request(plan.method, plan.path, query=plan.query, body=plan.body, timeout=timeout)
+        except ClientError as exc:
+            if exc.exit_code != EXIT_NOT_RUNNING and not isinstance(exc, RequestTimeout):
+                raise
+            last = exc
+        else:
+            client.waited = _number(round(clock() - started, 1))
+            return data
+        left = deadline - clock()
+        if left <= 0:
+            raise ClientError(EXIT_NOT_RUNNING, 'halugraph did not answer within %s s (%s)'
+                              % (_number(plan.poll), last.error), not_running_hint(client.root))
+        sleep(min(pause, left))
+        pause = min(pause * 2, POLL_MAX)
+
+
+SUBCOMMANDS = {'errors': ('list', 'clear'), 'compile': ('start', 'progress', 'done', 'list')}
+
+
+def plan(args):
+    """Turn parsed arguments into a Plan (raises an exit-code-1 ClientError for invalid combinations)."""
+    if not hasattr(args, 'cwd'):
+        args.cwd = _getcwd()
+    build = getattr(args, 'plan', None)
+    if build is None:
+        # No parent parser sets a `plan` default on purpose: subparser defaults must not compete with
+        # parent defaults (their precedence changed in Python 3.9.8 / 3.10.0).
+        command = getattr(args, 'command', None)
+        if command in SUBCOMMANDS:
+            raise usage_error('%s needs a subcommand: %s' % (command, ' | '.join(SUBCOMMANDS[command])),
+                              'Run `%s %s --help`.' % (PROG, command))
+        raise usage_error('missing COMMAND', 'Start with `%s hello`, then `%s wait`. Run `%s --help` for all '
+                          'commands.' % (PROG, PROG, PROG))
+    return build(args)
+
+
+# ---------------------------------------------------------------------------
+# Command line
+# ---------------------------------------------------------------------------
+
+
+class _Exit(Exception):
+    """Raised instead of SystemExit when argparse is done (--help, --version)."""
+
+    def __init__(self, code):
+        Exception.__init__(self, code)
+        self.code = code
+
+
+class _Parser(argparse.ArgumentParser):
+    """ArgumentParser that reports usage errors as ClientError (exit 1, JSON on stderr), writes help to
+    its own ``out`` stream (never by swapping the global sys.stdout) and never calls sys.exit."""
+
+    def __init__(self, *args, **kwargs):
+        self.out = kwargs.pop('out', None)
+        argparse.ArgumentParser.__init__(self, *args, **kwargs)
+
+    def print_help(self, file=None):
+        argparse.ArgumentParser.print_help(self, file or self.out)
+
+    def exit(self, status=0, message=None):
+        if message:
+            (self.out or sys.stderr).write(message)
+        raise _Exit(status)
+
+    def error(self, message):
+        raise ClientError(EXIT_USAGE, message, '%s  (run `%s --help` for details)'
+                          % (' '.join(self.format_usage().split()), self.prog))
+
+
+class _VersionAction(argparse.Action):
+    def __init__(self, option_strings, dest=argparse.SUPPRESS, default=argparse.SUPPRESS, help=None):
+        argparse.Action.__init__(self, option_strings, dest=dest, default=default, nargs=0, help=help)
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        (parser.out or sys.stdout).write('halugraph-client %s\n' % CLIENT_VERSION)
+        raise _Exit(EXIT_OK)
+
+
+class _Formatter(argparse.RawDescriptionHelpFormatter):
+    def __init__(self, prog):
+        argparse.RawDescriptionHelpFormatter.__init__(self, prog, max_help_position=30)
+
+
+TOP_DESCRIPTION = """\
+The agent's bridge to the halugraph server of this project. AGENTS.md §8 lists the everyday commands;
+%s is the full reference — open it for details only.
+
+Typical loop:  hello → wait → handle the event (compile / message / answer / cancel) → wait → …
+""" % DOC_PATH
+
+TOP_EPILOG = """\
+project root: --root DIR, else $HALUGRAPH_ROOT, else this script's tools/cmd/../.., else the nearest
+  folder containing .hlg above the current directory. Connects over util/halugraph.sock (unix socket)
+  and falls back to TCP using util/instance.json (on Windows: always TCP).
+
+output: pretty UTF-8 JSON on stdout. Failures: JSON {"error", "hint"} on stderr.
+exit codes: 0 ok · 1 usage error · 2 request failed (HTTP 4xx/5xx, timeout) · 3 halugraph not running
+  (ask the user to start it: halugraph <root>) · 127 no python 3.8+ found · 130 interrupted
+windows: Git Bash runs %(prog)s as everywhere; cmd.exe / PowerShell use tools\\cmd\\halugraph-client.cmd
+
+examples:
+  %(prog)s hello --name "Claude Code"
+  %(prog)s wait                    # blocks up to 540 s: give your shell tool a 10 minute timeout
+  %(prog)s <command> --help        # every command has its own help with examples
+
+full reference: tools/doc/halugraph-client.md
+""" % {'prog': PROG}
+
+
+def build_parser(out=None):
+    """Build the argparse parser for all commands (spec §6.1). Help text goes to ``out`` (default stdout)."""
+    common = _Parser(add_help=False)
+    common.add_argument('--root', metavar='DIR', default=argparse.SUPPRESS,
+                        help='project root (folder containing .hlg); default: auto-detect')
+
+    parser = _Parser(prog=PROG, description=TOP_DESCRIPTION, epilog=TOP_EPILOG, formatter_class=_Formatter,
+                     parents=[common], out=out)
+    parser.add_argument('--version', action=_VersionAction, help="print the client's version and exit")
+    sub = parser.add_subparsers(dest='command', metavar='COMMAND', title='commands')
+
+    def add(container, name, summary, description, examples, aliases=()):
+        epilog = 'examples:\n' + '\n'.join('  %s %s' % (PROG, e) for e in examples)
+        return container.add_parser(name, help=summary, description=textwrap.fill(description, 100),
+                                    epilog=epilog, formatter_class=_Formatter, parents=[common],
+                                    aliases=list(aliases), out=out)
+
+    def timeout_flag(p, what):
+        p.add_argument('--timeout', type=seconds, default=DEFAULT_WAIT, metavar='S',
+                       help='%s (default %d, at most %d)' % (what, DEFAULT_WAIT, MAX_WAIT))
+
+    # -- agent loop --
+    p = add(sub, 'hello', 'announce the agent; prints project info + protocol instructions',
+            'POST /api/agent/hello. Marks the agent as connected in the UI and prints the project info, '
+            'the protocol reminder and the number of pending events.',
+            ['hello', 'hello --name "Claude Code"', 'hello --name Codex'])
+    p.add_argument('--name', help='agent name shown in the UI')
+    p.set_defaults(plan=plan_hello)
+
+    p = add(sub, 'wait', 'block until the next event (compile, message, answer, cancel, timeout, shutdown)',
+            'POST /api/agent/wait. Long-polls for the next event and prints it as JSON. Each event carries '
+            '"instructions" telling you exactly what to do next. On timeout you get {"type": "timeout"}: '
+            'just call wait again.',
+            ['wait', 'wait --timeout 60'])
+    timeout_flag(p, 'seconds to block')
+    p.set_defaults(plan=plan_wait)
+
+    p = add(sub, 'events', 'peek at queued events without consuming them',
+            'GET /api/agent/events.', ['events'])
+    p.set_defaults(plan=plan_events)
+
+    # -- talking to the user --
+    p = add(sub, 'ask', 'ask the user a question in the UI and wait for the answer',
+            'POST /api/dialogs. Without --choice the user gets a text field and a "Submit" button; with '
+            'choices they get one button per choice (add --input for a text field too). Prints '
+            '{"status": "answered", "action", "text", "dialogId"}, {"status": "cancelled", "dialogId"} (the dialog '
+            'was withdrawn) or, when the timeout '
+            'passes first, {"status": "pending", "dialogId"} — the answer then arrives via wait as an '
+            '"answer" event.',
+            ['ask "What should the slider control?"',
+             'ask "Which style?" --choice Minimal --choice Psychedelic --title "Visual style"',
+             'ask "Rename the node?" --choice Yes --choice No --input --timeout 120'])
+    p.add_argument('question', nargs='+', metavar='QUESTION', help='the question (markdown allowed)')
+    p.add_argument('--title', help='dialog title (default "%s")' % DEFAULT_ASK_TITLE)
+    p.add_argument('--choice', action='append', metavar='C', help='an answer button; repeat for several')
+    group = p.add_mutually_exclusive_group()
+    group.add_argument('--input', dest='input', action='store_const', const=True, default=None,
+                       help='show a text field (default: only when there are no choices)')
+    group.add_argument('--no-input', dest='input', action='store_const', const=False,
+                       help='no text field (without choices the only button is "OK")')
+    timeout_flag(p, 'seconds to wait for the answer')
+    p.set_defaults(plan=plan_ask)
+
+    p = add(sub, 'dialog', 'show a markdown dialog (e.g. a plan) with custom buttons',
+            'POST /api/dialogs. Shows a dialog with a markdown body and waits for the user (unless '
+            '--no-wait). Prints the server response {"dialog": {...}}: check dialog.state '
+            '("answered" → dialog.answer.action/text, "open" → the answer will arrive via wait as an '
+            '"answer" event, "cancelled").',
+            ['dialog --title "Plan" --file agents/compiles/20260928-180000/plan.md --action Build --action Stop',
+             'dialog --title "Heads up" --markdown "Webcam access **is required**." --no-wait',
+             'dialog --title "Name?" --markdown "Name your synth" --action Save --input'])
+    p.add_argument('--title', required=True, help='dialog title')
+    body = p.add_mutually_exclusive_group(required=True)
+    body.add_argument('--markdown', metavar='M', help='markdown body')
+    body.add_argument('--file', metavar='F', help='read the markdown body from a UTF-8 file ("-" = stdin)')
+    p.add_argument('--action', action='append', metavar='A', help='a button label; repeat (default "OK")')
+    p.add_argument('--input', action='store_true', help='show a text field; its value comes back as answer.text')
+    p.add_argument('--no-wait', action='store_true', help='return immediately with the dialog id')
+    timeout_flag(p, 'seconds to wait for the answer')
+    p.set_defaults(plan=plan_dialog)
+
+    p = add(sub, 'dialog-wait', 'wait for the answer to an open dialog',
+            'GET /api/dialogs/<ID>?wait=S. Prints {"dialog": {...}} once answered/cancelled or when the '
+            'timeout passes (then dialog.state is still "open").',
+            ['dialog-wait d-3f2a', 'dialog-wait d-3f2a --timeout 30'])
+    p.add_argument('id', metavar='ID', help='dialog id (from ask/dialog output)')
+    timeout_flag(p, 'seconds to wait')
+    p.set_defaults(plan=plan_dialog_wait)
+
+    p = add(sub, 'dialog-cancel', 'close a dialog you opened (the user no longer needs to answer)',
+            'DELETE /api/dialogs/<ID>.', ['dialog-cancel d-3f2a'])
+    p.add_argument('id', metavar='ID', help='dialog id')
+    p.set_defaults(plan=plan_dialog_cancel)
+
+    p = add(sub, 'notify', 'show a toast notification in the UI',
+            'POST /api/agent/notify. Also kept in the notification history (bell menu).',
+            ['notify "Build ready — have a look at the preview" --level success',
+             'notify "The shader node needs a texture input" --level warning --title "Graph review"'])
+    p.add_argument('message', nargs='+', metavar='MESSAGE', help='notification text')
+    p.add_argument('--level', choices=LEVELS, help='info (default), success, warning or error')
+    p.add_argument('--title', help='optional title')
+    p.set_defaults(plan=plan_notify)
+
+    p = add(sub, 'status', 'set (or --clear) a status line with optional progress in the UI',
+            'POST /api/agent/status (upsert by KEY) or, with --clear, DELETE /api/agent/status/<KEY>. Busy '
+            'statuses show a progress bar in the status bar; they never block the user.',
+            ['status build "Installing toolchain…" --state busy', 'status build "Bundling" --progress 0.8',
+             'status build --clear'])
+    p.add_argument('key', metavar='KEY', help='status key (e.g. "compile", "build")')
+    p.add_argument('text', nargs='*', metavar='TEXT', help='status text (omit with --clear)')
+    p.add_argument('--state', choices=STATES, help='idle, busy (default), done or error')
+    p.add_argument('--progress', type=fraction, metavar='P', help='fraction 0..1 (e.g. 0.5)')
+    p.add_argument('--clear', action='store_true', help='remove the status')
+    p.set_defaults(plan=plan_status)
+
+    p = add(sub, 'log', 'append a line to the agent log (Agent panel)',
+            'POST /api/agent/log.',
+            ['log "Reading graph main (7 nodes)"', 'log "vite build took 3.2 s" --level debug'])
+    p.add_argument('text', nargs='+', metavar='TEXT', help='log text')
+    p.add_argument('--level', choices=LOG_LEVELS, help='debug, info (default), warning or error')
+    p.set_defaults(plan=plan_log)
+
+    # -- problems --
+    p = add(sub, 'error', 'report a problem to the Problems window (graph/node/port aware)',
+            'POST /api/diagnostics with one diagnostic. Point at the exact place (--graph/--node/--port or '
+            '--node-type or --file/--line) so the user can click through to it. --port P is a port name, or '
+            '#N for the N-th (0-based) port; --side says which side (default input).',
+            ['error "Cutoff above Nyquist" --severity warning --graph main --node filter1 --port cutoff --compile 20260928-180000',
+             'error "Two outputs drive the same element" --graph main --node out1 --code fan-in',
+             'error "Type check still fails after 5 attempts: TS2345" --file agents/compiles/20260928-180000/app/src/nodes/main/osc1.ts --line 12 --compile 20260928-180000'])
+    p.add_argument('message', nargs='+', metavar='MESSAGE', help='what is wrong and how to fix it')
+    p.add_argument('--severity', choices=SEVERITIES, help='error (default), warning or info')
+    p.add_argument('--code', metavar='C', help='kebab-case machine code, e.g. "missing-input"')
+    p.add_argument('--graph', metavar='G', help='graph name, e.g. "synth/voice"')
+    p.add_argument('--node', metavar='N', help='node id within the graph')
+    p.add_argument('--port', metavar='P', help='port name, or #N for the N-th port (0-based)')
+    p.add_argument('--side', choices=SIDES, help='port side for --port (default input)')
+    p.add_argument('--node-type', metavar='T', help='node type name, e.g. "audio/oscillator"')
+    p.add_argument('--file', metavar='F', help='project-relative file')
+    p.add_argument('--line', type=line_number, metavar='L', help='1-based line in --file')
+    p.add_argument('--compile', metavar='ID', help='compile id this problem belongs to')
+    p.set_defaults(plan=plan_error)
+
+    p = add(sub, 'errors', 'list or clear the problems the agent reported',
+            'errors list → GET /api/diagnostics; errors clear [--compile ID] → DELETE /api/diagnostics.',
+            ['errors list', 'errors clear --compile 20260928-180000'])
+    errors = p.add_subparsers(dest='errors_command', metavar='SUBCOMMAND', title='subcommands')
+    q = add(errors, 'list', 'list agent/server-reported problems', 'GET /api/diagnostics.', ['errors list'])
+    q.set_defaults(plan=plan_errors_list)
+    q = add(errors, 'clear', 'clear agent-reported problems (all, or only one compile\'s)',
+            'DELETE /api/diagnostics[?compileId=ID].', ['errors clear', 'errors clear --compile 20260928-180000'])
+    q.add_argument('--compile', metavar='ID', help='only clear the problems of this compile')
+    q.set_defaults(plan=plan_errors_clear)
+
+    # -- compiles --
+    p = add(sub, 'compile', 'report compile lifecycle: start, progress, done; or list compiles',
+            'Follow process/compile.md. compile start ID → POST /api/compile/start; compile progress ID TEXT '
+            '→ POST /api/compile/progress; compile done ID → POST /api/compile/done; compile list → GET '
+            '/api/compiles.',
+            ['compile start 20260928-180000',
+             'compile progress 20260928-180000 "Generating node modules" --progress 0.4',
+             'compile done 20260928-180000 --summary "7 nodes, synth + visualizer"',
+             'compile done 20260928-180000 --failed --summary "vite build failed: see Problems"', 'compile list'])
+    compiles = p.add_subparsers(dest='compile_command', metavar='SUBCOMMAND', title='subcommands')
+    q = add(compiles, 'start', 'mark a compile as running', 'POST /api/compile/start {id}.',
+            ['compile start 20260928-180000'])
+    q.add_argument('id', metavar='ID', help='compile id (from the compile event)')
+    q.set_defaults(plan=plan_compile_start)
+    q = add(compiles, 'progress', 'report compile progress', 'POST /api/compile/progress {id, text, progress?}.',
+            ['compile progress 20260928-180000 "Building with vite" --progress 0.8'])
+    q.add_argument('id', metavar='ID', help='compile id')
+    q.add_argument('text', nargs='+', metavar='TEXT', help='what is happening')
+    q.add_argument('--progress', type=fraction, metavar='P', help='fraction 0..1')
+    q.set_defaults(plan=plan_compile_progress)
+    q = add(compiles, 'done', 'finish a compile (succeeded unless --failed)',
+            'POST /api/compile/done {id, status, summary?}. "succeeded" requires '
+            'agents/compiles/build/<ID>/index.html to exist; the server then publishes it as build/latest.',
+            ['compile done 20260928-180000 --summary "Built 7 nodes"',
+             'compile done 20260928-180000 --failed --summary "vite build failed"'])
+    q.add_argument('id', metavar='ID', help='compile id')
+    q.add_argument('--failed', action='store_true', help='the compile failed')
+    q.add_argument('--summary', metavar='S', help='one-line summary shown to the user')
+    q.set_defaults(plan=plan_compile_done)
+    q = add(compiles, 'list', 'list compile records (newest first)', 'GET /api/compiles.', ['compile list'])
+    q.set_defaults(plan=plan_compile_list)
+
+    # -- reading the project --
+    p = add(sub, 'info', 'project info (root, name, UI url, preview url, socket)', 'GET /api/project.',
+            ['info', 'project'], aliases=['project'])
+    p.set_defaults(plan=plan_info)
+
+    p = add(sub, 'ping', 'check that halugraph is reachable (--wait S: until it answers)',
+            'GET /api/project; prints {"ok": true, "url", "root", "via"}. With --wait S it retries until halugraph '
+            'answers or S seconds pass (then exit 3), and also prints "waited" (seconds). When halugraph is not '
+            'running (exit 3), ask the user to start it and block in ping --wait 540 (shell tool timeout 10 '
+            'minutes) instead of sleeping.',
+            ['ping', 'ping --wait 540'])
+    p.add_argument('--wait', type=seconds, metavar='S',
+                   help='retry for up to S seconds until halugraph answers (default: one attempt; at most %d)'
+                   % MAX_WAIT)
+    p.set_defaults(plan=plan_ping)
+
+    p = add(sub, 'graphs', 'list graphs', 'GET /api/graphs.', ['graphs'])
+    p.set_defaults(plan=plan_graphs)
+
+    p = add(sub, 'nodes', 'list node types', 'GET /api/nodes.', ['nodes'])
+    p.set_defaults(plan=plan_nodes)
+
+    p = add(sub, 'graph', 'read one graph (raw YAML + parsed), or --resolved for compiling',
+            'GET /api/graph?name=NAME, or with --resolved GET /api/resolved?name=NAME[&compile=ID]: the graph '
+            'with every node\'s type definition inlined, the edges, its interface and all subgraphs. '
+            '--compile reads the compile\'s snapshot (and implies --resolved).',
+            ['graph main', 'graph synth/voice --resolved', 'graph main --resolved --compile 20260928-180000'])
+    p.add_argument('name', metavar='NAME', help='graph name, e.g. "main" or "synth/voice"')
+    p.add_argument('--resolved', action='store_true', help='resolved graph (definitions inlined)')
+    p.add_argument('--compile', metavar='ID', help='read from this compile\'s snapshot (implies --resolved)')
+    p.set_defaults(plan=plan_graph)
+
+    p = add(sub, 'node', 'read one node type definition', 'GET /api/node?name=NAME.',
+            ['node audio/oscillator'])
+    p.add_argument('name', metavar='NAME', help='node type name, e.g. "ui/slider"')
+    p.set_defaults(plan=plan_node)
+
+    p = add(sub, 'validate', 'validate graphs and node types on disk', 'GET /api/validate[?graph=G].',
+            ['validate', 'validate --graph main'])
+    p.add_argument('--graph', metavar='G', help='only this graph')
+    p.set_defaults(plan=plan_validate)
+
+    return parser
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+
+def _emit(stream, obj):
+    if stream is None:  # the fd was closed (`>&-` / `2>&-`): python sets sys.stdout / sys.stderr to None
+        return
+    text = json.dumps(obj, indent=2, ensure_ascii=False) + '\n'
+    try:
+        stream.write(text)
+    except UnicodeEncodeError:  # e.g. PYTHONIOENCODING=ascii — escaped JSON is still valid JSON
+        stream.write(json.dumps(obj, indent=2, ensure_ascii=True) + '\n')
+    stream.flush()
+
+
+def _report(stderr, error):
+    """Print a ClientError on stderr; a closed/broken stderr must not change the exit code."""
+    try:
+        _emit(stderr, error.payload())
+    except (OSError, ValueError):
+        pass
+    return error.exit_code
+
+
+def run(argv=None, env=None, cwd=None, stdout=None, stderr=None, script_path=None):
+    """Run one command. Returns the exit code; never raises (except BrokenPipeError on stdout).
+
+    Unexpected exceptions are reported as JSON too (exit 2) so the agent never has to parse a traceback.
+    """
+    argv = sys.argv[1:] if argv is None else argv
+    stdout = sys.stdout if stdout is None else stdout
+    stderr = sys.stderr if stderr is None else stderr
+    try:
+        try:
+            args = build_parser(out=stdout).parse_args(argv)
+        except _Exit as exc:  # --help / --version already printed
+            return exc.code
+        args.cwd = _getcwd() if cwd is None else cwd
+        request = plan(args)
+        root = find_root(getattr(args, 'root', None), env, script_path, args.cwd)
+        client = Client(root, os.environ if env is None else env)
+        if request.poll is not None:
+            data = request_until_up(client, request)
+        else:
+            data = client.request(request.method, request.path, query=request.query, body=request.body,
+                                  timeout=request.timeout)
+        _emit(stdout, request.transform(data, client) if request.transform else data)
+        return EXIT_OK
+    except ClientError as exc:
+        return _report(stderr, exc)
+    except KeyboardInterrupt:
+        return EXIT_INTERRUPTED
+    except BrokenPipeError:
+        raise  # stdout's reader went away; main() exits quietly
+    except Exception as exc:  # a client bug: still answer in the documented JSON shape
+        return _report(stderr, ClientError(
+            EXIT_REQUEST, 'halugraph-client internal error: %s: %s' % (type(exc).__name__, exc),
+            'This is a bug in tools/cmd/halugraph-client, not in your command. Tell the user and include this '
+            'error.'))
+
+
+def main():
+    """Script entry point: run() with the real argv/streams, then exit with its code."""
+    try:
+        utf8_output([sys.stdout, sys.stderr], os.environ)
+        interrupt_on_ctrl_break()
+        code = run()
+        if sys.stdout is not None:
+            sys.stdout.flush()
+    except KeyboardInterrupt:
+        code = EXIT_INTERRUPTED
+    except BrokenPipeError:
+        # the reader of stdout went away (e.g. `| head`): exit quietly without a traceback
+        try:
+            devnull = os.open(os.devnull, os.O_WRONLY)
+            os.dup2(devnull, sys.stdout.fileno())
+        except (OSError, ValueError, AttributeError):
+            pass
+        code = EXIT_OK
+    sys.exit(code)
+
+
+if __name__ == '__main__':
+    main()

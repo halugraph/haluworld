@@ -1,0 +1,64 @@
+# halugraph — Codex command rules for this project (Starlark; `codex execpolicy check --rules <this file> <command…>`).
+#
+# The compiler agent talks to the halugraph server through tools/cmd/halugraph-client, over 127.0.0.1 or a
+# local socket. Codex's workspace-write sandbox blocks both (loopback cannot be allowed on its own), so these
+# rules let Codex run exactly that client OUTSIDE the sandbox, without asking. Nothing else is allowed here:
+# every other command keeps the sandbox and the approval policy of .codex/config.toml.
+#
+# Codex loads this file only after you trusted the project folder (its first-run question). Keep the client
+# as halugraph shipped it — AGENTS.md forbids the agent to change it, because these rules trust it.
+
+# macOS / Linux / Git Bash: the launcher itself (a sh script that starts python)
+prefix_rule(
+    pattern = [["tools/cmd/halugraph-client", "./tools/cmd/halugraph-client"]],
+    decision = "allow",
+    justification = "halugraph agent client: talks only to the local halugraph server of this project",
+    match = [
+        ["tools/cmd/halugraph-client", "hello", "--name", "Codex"],
+        ["tools/cmd/halugraph-client", "wait", "--timeout", "280"],
+        ["./tools/cmd/halugraph-client", "notify", "Agent ready", "--level", "success"],
+    ],
+    not_match = [
+        ["tools/cmd/halugraph-clientX"],
+        ["tools/cmd/other-tool", "wait"],
+        ["sh", "tools/cmd/halugraph-client"],
+    ],
+)
+
+# the same client started through python (python3 on macOS / Linux; python on Windows)
+prefix_rule(
+    pattern = [["python3", "python"], ["tools/cmd/halugraph-client", "./tools/cmd/halugraph-client"]],
+    decision = "allow",
+    justification = "halugraph agent client: talks only to the local halugraph server of this project",
+    match = [
+        ["python3", "tools/cmd/halugraph-client", "wait"],
+        ["python", "./tools/cmd/halugraph-client", "ping"],
+    ],
+    not_match = [
+        ["python3", "-c", "print(1)"],
+        ["python3", "tools/cmd/other-tool"],
+        ["python3"],
+    ],
+)
+
+# Windows (cmd.exe / PowerShell): the .cmd launcher, with / or \ (PowerShell also finds it without ".cmd")
+prefix_rule(
+    pattern = [[
+        "tools/cmd/halugraph-client.cmd",
+        "tools\\cmd\\halugraph-client.cmd",
+        ".\\tools\\cmd\\halugraph-client.cmd",
+        "tools\\cmd\\halugraph-client",
+        ".\\tools\\cmd\\halugraph-client",
+    ]],
+    decision = "allow",
+    justification = "halugraph agent client: talks only to the local halugraph server of this project",
+    match = [
+        ["tools\\cmd\\halugraph-client.cmd", "wait", "--timeout", "280"],
+        ["tools/cmd/halugraph-client.cmd", "hello", "--name", "Codex"],
+        [".\\tools\\cmd\\halugraph-client", "ping"],
+    ],
+    not_match = [
+        ["tools\\cmd\\other.cmd"],
+        ["cmd", "/c", "tools\\cmd\\halugraph-client.cmd"],
+    ],
+)

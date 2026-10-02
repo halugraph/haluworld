@@ -1,0 +1,30 @@
+description: Animation clock — time, delta and frame count every frame
+category: Time
+color: "#8d6e63"
+icon: schedule
+function: |
+  The heartbeat for animation: elapsed time for shaders and motion, per-frame delta for physics, and
+  a frame counter.
+approach: |
+  `ctx.onFrame((t, dt, frame) => …)` from the runtime (one shared requestAnimationFrame loop).
+  Keep its own elapsed time so it can pause: while `running` is true (default), time += dt; emit
+  `time` (seconds, float), `delta` (seconds since the previous frame, clamped to 0.1 so a background
+  tab does not cause jumps) and `frame` (integer, counts frames while running). While paused nothing
+  is emitted. The action may set a speed factor ("half speed") or a loop length ("loops every 10 s").
+deliverables: |
+  - `time`, `delta`, `frame`: numbers emitted every animation frame while running (in that order).
+  - `time` continues from where it paused when `running` goes back to true; `delta` never exceeds 0.1 s.
+preconditions: |
+  - At least one output must be wired (warning otherwise).
+  - Frame rate follows the display (60/120 Hz) and stops in background tabs; consumers must use
+    `time`/`delta`, never assume a fixed frame length.
+inputs:
+  - name: running
+    description: Boolean, true runs the clock (default true)
+outputs:
+  - name: time
+    description: Elapsed seconds (float)
+  - name: delta
+    description: Seconds since the previous frame
+  - name: frame
+    description: Frame counter (integer)

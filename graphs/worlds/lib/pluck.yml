@@ -1,0 +1,119 @@
+description: "Plucked synth voice (saw → resonant low-pass → VCA) — inputs frequency, gate, brightness; output signal"
+nodes:
+  - id: about
+    type: comment
+    action: "A reusable plucked voice shared by all four worlds (bass in Neon Drive, chimes in Aurora and Firefly Garden, bells and gong in Crystal Cave). Brightness 0..1 opens the filter. No App node: a subgraph is a part, not an app."
+    position: { x: 40, y: 40 }
+    size: { width: 520, height: 140 }
+    inputs: []
+    outputs: []
+  - id: freq_in
+    type: graph-input
+    action: Pitch of the voice in Hz
+    position: { x: 40, y: 240 }
+    inputs: []
+    outputs:
+      - name: frequency
+        connection: osc.frequency
+  - id: gate_in
+    type: graph-input
+    action: "Note on/off: true starts a note, false releases it; a bare bang (event) plays a short note (on, then off after 0.12 s)"
+    position: { x: 40, y: 460 }
+    inputs: []
+    outputs:
+      - name: gate
+        connection: env.gate
+  - id: bright_in
+    type: graph-input
+    action: Tone brightness 0..1 (default 0.5)
+    position: { x: 40, y: 680 }
+    inputs: []
+    outputs:
+      - name: brightness
+        connection: cut.value
+  - id: osc
+    type: audio/oscillator
+    action: "Sawtooth, with a quiet second saw detuned +7 cents for width"
+    position: { x: 420, y: 240 }
+    inputs:
+      - name: frequency
+        connection: freq_in.frequency
+      - name: type
+        connection: ""
+      - name: detune
+        connection: ""
+    outputs:
+      - name: signal
+        connection: filter.signal
+  - id: env
+    type: audio/envelope
+    action: "Pluck: 0.004 s attack, 0.35 s decay, sustain 0.15, 0.5 s release. A bang on gate = note on, then off after 0.12 s"
+    position: { x: 420, y: 460 }
+    inputs:
+      - name: gate
+        connection: gate_in.gate
+      - name: attack
+        connection: ""
+      - name: decay
+        connection: ""
+      - name: sustain
+        connection: ""
+      - name: release
+        connection: ""
+    outputs:
+      - name: envelope
+        connection: vca.gain
+  - id: cut
+    type: math/map-range
+    action: Brightness 0..1 → filter cutoff 300..7000 Hz on an exponential curve
+    position: { x: 420, y: 680 }
+    inputs:
+      - name: value
+        connection: bright_in.brightness
+      - name: in-min
+        connection: ""
+      - name: in-max
+        connection: ""
+      - name: out-min
+        connection: ""
+      - name: out-max
+        connection: ""
+    outputs:
+      - name: value
+        connection: filter.cutoff
+  - id: filter
+    type: audio/filter
+    action: "Low-pass, resonance 5; the cutoff also jumps up by an octave with each note (pluck) and settles in 0.2 s"
+    position: { x: 800, y: 240 }
+    inputs:
+      - name: signal
+        connection: osc.signal
+      - name: cutoff
+        connection: cut.value
+      - name: resonance
+        connection: ""
+      - name: type
+        connection: ""
+    outputs:
+      - name: signal
+        connection: vca.signal
+  - id: vca
+    type: audio/gain
+    action: "VCA controlled by the envelope, peak 0.6"
+    position: { x: 1180, y: 240 }
+    inputs:
+      - name: signal
+        connection: filter.signal
+      - name: gain
+        connection: env.envelope
+    outputs:
+      - name: signal
+        connection: signal_out.signal
+  - id: signal_out
+    type: graph-output
+    action: "The voice's audio output"
+    position: { x: 1560, y: 240 }
+    inputs:
+      - name: signal
+        connection: vca.signal
+    outputs: []

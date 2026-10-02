@@ -1,0 +1,63 @@
+description: "Spacious effect chain (ping-pong echo → big hall reverb) — inputs signal, space; output signal"
+nodes:
+  - id: about
+    type: comment
+    action: "Shared \"sense of space\" for the calmer worlds. space 0..1 sets how far away everything sounds."
+    position: { x: 40, y: 40 }
+    size: { width: 480, height: 120 }
+    inputs: []
+    outputs: []
+  - id: sig_in
+    type: graph-input
+    action: Dry audio in
+    position: { x: 40, y: 240 }
+    inputs: []
+    outputs:
+      - name: signal
+        connection: echo.signal
+  - id: space_in
+    type: graph-input
+    action: "Amount of space 0..1 (default 0.5): reverb wet mix"
+    position: { x: 40, y: 460 }
+    inputs: []
+    outputs:
+      - name: space
+        connection: hall.mix
+  - id: echo
+    type: audio/delay
+    action: "Dotted-eighth echo (0.42 s), feedback 0.4, mix 0.25, darkened repeats"
+    position: { x: 420, y: 240 }
+    inputs:
+      - name: signal
+        connection: sig_in.signal
+      - name: time
+        connection: ""
+      - name: feedback
+        connection: ""
+      - name: mix
+        connection: ""
+    outputs:
+      - name: signal
+        connection: hall.signal
+  - id: hall
+    type: audio/reverb
+    action: "Huge hall, 5 s tail (size 0.9); wet mix from space"
+    position: { x: 800, y: 240 }
+    inputs:
+      - name: signal
+        connection: echo.signal
+      - name: size
+        connection: ""
+      - name: mix
+        connection: space_in.space
+    outputs:
+      - name: signal
+        connection: signal_out.signal
+  - id: signal_out
+    type: graph-output
+    action: The spacious signal
+    position: { x: 1180, y: 240 }
+    inputs:
+      - name: signal
+        connection: hall.signal
+    outputs: []

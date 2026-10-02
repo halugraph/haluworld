@@ -1,0 +1,19 @@
+description: A sticky note for humans — ignored by the compiler
+category: Core
+color: "#fff176"
+icon: sticky_note_2
+function: |
+  A note on the canvas. The `action` field is the note text (markdown allowed). It explains the patch
+  to people and has no behaviour.
+approach: |
+  Generate nothing for it. Read it, though: artists often leave intent, TODOs or constraints in
+  comments ("keep it under 60 fps on phones") — treat them as context for the neighbouring nodes.
+deliverables: |
+  Nothing is generated; the compiled app is identical with or without comments. Mention in plan.md
+  when a comment influenced an interpretation ("comment says: keep it minimal").
+preconditions: |
+  - No ports (wires to a comment are meaningless — ignore them and warn).
+  - Instructions written in a comment are hints, not requirements: when they contradict node actions,
+    node actions win.
+inputs: []
+outputs: []

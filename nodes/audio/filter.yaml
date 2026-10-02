@@ -1,0 +1,35 @@
+description: Low/high/band-pass filter with cutoff and resonance
+category: Audio
+color: "#7e57c2"
+icon: filter_alt
+function: |
+  Shapes the tone of a signal by removing frequencies — the classic subtractive-synth filter sweep,
+  muffling, telephone effects.
+approach: |
+  A Web Audio `BiquadFilterNode` on the shared context; every AudioNode on `signal` connects to it; its
+  output is emitted on `signal`.
+  - `cutoff`: Hz (default 1000), clamped to 20..20000, applied with `setTargetAtTime(v, t, 0.01)`;
+    an AudioNode wired in modulates `frequency` (filter envelopes, LFO wobble).
+  - `resonance`: Q (default 1; musical range 0.5..20).
+  - `type`: lowpass (default) | highpass | bandpass | notch | peaking | lowshelf | highshelf | allpass;
+    accept "lp", "hp", "bp" aliases. A steeper 24 dB slope ("24dB", "steep") = two biquads in series.
+  If `cutoff` receives values in 0..1 (an unconfigured slider), interpret them as a normalised knob
+  and map exponentially to 20..20000 Hz — record that assumption in plan.md and as an info diagnostic.
+deliverables: |
+  - `signal`: the filtered signal (AudioNode), emitted once at creation.
+  - Smooth, click-free parameter changes; stable at high resonance.
+preconditions: |
+  - `signal` input must receive an AudioNode.
+  - `cutoff` must be positive; `type` must be one of the listed names (unknown → lowpass + warning).
+inputs:
+  - name: signal
+    description: Audio signal in (AudioNode, fan-in sums)
+  - name: cutoff
+    description: Cutoff frequency in Hz (default 1000), number or AudioNode
+  - name: resonance
+    description: Resonance / Q (default 1)
+  - name: type
+    description: lowpass, highpass, bandpass, notch, peaking, lowshelf, highshelf or allpass
+outputs:
+  - name: signal
+    description: The filtered audio signal (AudioNode)

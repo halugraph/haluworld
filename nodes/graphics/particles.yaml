@@ -1,0 +1,36 @@
+description: Particle system — bursts and streams of glowing dots
+category: Graphics
+color: "#ff7043"
+icon: bubble_chart
+function: |
+  Emits particles (sparks, snow, confetti, smoke, fireflies) that move, fade and die — triggered by
+  events or flowing continuously.
+approach: |
+  Its own `<canvas class="hlg-canvas">` (2D context; switch to WebGL points above ~5000 live
+  particles). Particles live in a pooled array (no per-frame allocation): position, velocity, life,
+  size, colour. Physics and look from the action (gravity, wind, swirl, fade, glow via
+  `globalCompositeOperation = 'lighter'`). Update and draw with `ctx.onFrame` using `dt`.
+  - `emit`: each value triggers a burst (default 40 particles). A value `{ x, y }` (0..1, e.g. from a
+    canvas/mouse pointer) sets the burst origin; otherwise the centre or the origin in the action.
+  - `rate`: particles per second emitted continuously (default 0 = bursts only).
+  - `color`: CSS colour for new particles (default the theme accent; "rainbow" in the action → hue
+    cycling).
+  Cap live particles (default 3000) and stop drawing when none are alive.
+deliverables: |
+  - `element`: the particle canvas, emitted once at creation, responsive, transparent background by
+    default so it can overlay other content (full-screen overlay when the action says so).
+  - Smooth 60 fps animation within the particle cap.
+preconditions: |
+  - Either `emit` or `rate` must be wired (or the action describes a constant stream) — otherwise no
+    particle ever appears (warning).
+  - `element` must reach the page (warning when unwired).
+inputs:
+  - name: emit
+    description: Each value triggers a burst ({x, y} sets the origin)
+  - name: rate
+    description: Continuous emission in particles per second (default 0)
+  - name: color
+    description: CSS colour of new particles
+outputs:
+  - name: element
+    description: The particle canvas DOM element

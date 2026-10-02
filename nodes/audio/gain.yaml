@@ -1,0 +1,30 @@
+description: Volume control / VCA — multiplies a signal by a gain
+category: Audio
+color: "#7e57c2"
+icon: volume_up
+function: |
+  Scales the amplitude of an audio signal. With an envelope wired into `gain` it is the VCA that turns
+  a drone into notes; with a number it is a volume knob; with a slow LFO signal it is tremolo.
+approach: |
+  A Web Audio `GainNode` on the shared context. Every AudioNode arriving on `signal` is connected to it
+  (fan-in sums). Its output is emitted on `signal`.
+  - `gain` as a number: `gain.gain.setTargetAtTime(v, t, 0.01)` (default 1, or the level in the
+    action; accept dB when the action talks in dB: `10 ** (dB / 20)`).
+  - `gain` as an AudioNode (envelope, LFO signal): set `gain.gain.value = 0` and connect the node to
+    `gain.gain` so the modulator fully controls the level.
+  Disconnect sources in `dispose()`.
+deliverables: |
+  - `signal`: the GainNode output (AudioNode), emitted once at creation.
+  - Smooth level changes without zipper noise or clicks.
+preconditions: |
+  - `signal` input must receive an AudioNode (type mismatch otherwise).
+  - `gain` numbers above ~2 can clip — clamp to 0..4 and warn when the graph asks for more.
+  - The output should lead to a dac/analyser/effect.
+inputs:
+  - name: signal
+    description: Audio signal in (AudioNode, fan-in sums)
+  - name: gain
+    description: Level (number, default 1) or a modulating AudioNode such as an envelope
+outputs:
+  - name: signal
+    description: The scaled audio signal (AudioNode)

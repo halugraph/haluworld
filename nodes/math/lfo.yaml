@@ -1,0 +1,29 @@
+description: Low-frequency oscillator — a slowly moving number
+category: Math
+color: "#66bb6a"
+icon: ssid_chart
+function: |
+  A number that moves up and down by itself — for breathing animations, slow colour cycles, wobbling
+  parameters. (For audio-rate modulation use audio/oscillator instead.)
+approach: |
+  Computed every animation frame with `ctx.onFrame((t, dt) => …)`: phase += frequency * dt (wrap at 1; phase
+  stays continuous when frequency changes). Output range 0..1 (the action may ask for -1..1 or
+  another range). Shapes: sine (default), triangle, square, saw, ramp-down, random (sample & hold
+  per cycle), noise (smooth random). `frequency` in Hz (default 0.5; "every 4 seconds" → 0.25).
+deliverables: |
+  - `value`: a number emitted every animation frame, following the chosen shape and frequency, within
+    the output range (0..1 by default).
+  - Continuous phase when `frequency` or `shape` change (no jumps), pauses naturally when the tab is
+    hidden (requestAnimationFrame stops).
+preconditions: |
+  - `value` must be wired (warning otherwise).
+  - Driving audio AudioParams with a per-frame number is fine for slow changes (< ~5 Hz) if the
+    receiver smooths with `setTargetAtTime`; faster → use an audio/oscillator (warning).
+inputs:
+  - name: frequency
+    description: Cycles per second (default 0.5)
+  - name: shape
+    description: sine, triangle, square, saw, random or noise
+outputs:
+  - name: value
+    description: The oscillating number (0..1), every frame

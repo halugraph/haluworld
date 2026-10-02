@@ -1,0 +1,31 @@
+description: Computes a formula from a, b and c
+category: Math
+color: "#66bb6a"
+icon: calculate
+function: |
+  Calculates a number from up to three inputs with the formula in the action: "a * b", "a + b + c",
+  "a * 1.5", "mtof(a)", "sin(a * 2π) * b", "average of a, b, c", "round a to 2 decimals".
+approach: |
+  Translate the action into plain TypeScript at COMPILE time (no `eval`/`new Function` at runtime).
+  Keep the latest a, b, c (defaults 0, or the neutral element of the operation — 1 for factors) and
+  recompute on every input; every input is "hot". Use helpers from hlg-runtime.ts (`mtof`, `clamp`,
+  `mapRange`, `lerp`) and `Math.*`. When a formula needs an input that has not arrived yet, use the
+  default. Element-wise over arrays when the action says so ("scale every value by b").
+deliverables: |
+  - `result`: a finite number (or array when working element-wise), emitted on every recomputation.
+    NaN/Infinity are never emitted (report once with `ctx.error`).
+preconditions: |
+  - The action must state the formula (error when empty — a math node without a formula is ambiguous).
+  - Every variable the formula uses must be wired or have a sensible default (warning when the
+    formula mentions an unwired input with no default).
+  - Inputs must be numbers (strings are coerced with `toNumber`).
+inputs:
+  - name: a
+    description: First operand (number)
+  - name: b
+    description: Second operand (number)
+  - name: c
+    description: Third operand (number)
+outputs:
+  - name: result
+    description: The computed number

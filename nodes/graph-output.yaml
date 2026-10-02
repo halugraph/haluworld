@@ -1,0 +1,24 @@
+description: An output of this graph when it is used as a subgraph
+category: Core
+color: "#78909c"
+icon: logout
+function: |
+  Declares one output of the graph's call interface. Its single input port's NAME becomes the output
+  port name of every `subgraph` node that calls this graph; whatever is wired into it inside the
+  graph comes out of that port outside.
+approach: |
+  Do not generate a node module. In the graph's wiring file add it with the runtime helper
+  `g.add('<id>', graphOutput('<port name>'), { type: 'graph-output' })` and wire into its port like
+  any input. Order of graph-output nodes in the YAML = order of the interface outputs.
+deliverables: |
+  Every value that reaches this node's input leaves the enclosing subgraph node on the output
+  `<port name>` (events stay events; the last value is replayed to wires connected later).
+preconditions: |
+  - Exactly one input port with a non-empty name, unique among the graph's graph-output nodes (the
+    default name `out` is fine for a single output but meaningless otherwise — suggest renaming).
+  - No output ports.
+  - Something should be wired into it; an unwired graph-output makes the caller's port silent (warning).
+inputs:
+  - name: out
+    description: Rename to the interface output's name; receives the value to pass out
+outputs: []
