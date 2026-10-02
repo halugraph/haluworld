@@ -49,4 +49,8 @@ nodes:
         connection: ""
       - name: style
         connection: ""
+      - name: url
+        connection: ""
+      - name: description
+        connection: ""
     outputs: []

@@ -1,40 +1,70 @@
 # haluworld
 
-A vibrant demonstration of what halugraph can do
+**The halugraph showcase:** four audiovisual worlds, patched as graphs and compiled into a web app by an AI agent.
 
-This folder is a **halugraph project**: you build a web app by patching nodes into graphs — like VVVV or
-plugdata — and describing in plain words what each node should do. An AI agent (Claude Code or Codex) is
-the compiler: it reads your graph and writes a real single-page web app, which you try right away in the
-Preview.
+* **Neon Drive:** a synthwave night drive.
+* **Aurora:** a calm pad under shimmering curtains.
+* **Firefly Garden:** fireflies that follow your pointer and sing when you tap.
+* **Crystal Cave:** bells and a gong in a 3D geode.
 
-## Start working
+Leave it alone for 20 seconds and **attract mode** tours the worlds by itself.
+Keys: **1–4** pick a world · **← / →** previous / next · **space** tap · **A** attract mode.
 
-1. **Start halugraph** for this folder (it opens the editor in your browser, http://127.0.0.1:4747/ by
-   default):
+This repository is a **halugraph project**. You build a web app by patching nodes into graphs (like VVVV or
+plugdata) and describing in plain words what each node should do. An AI agent (Claude Code or Codex) is the
+compiler: it reads the graphs and writes a real single-page web app, which you try right away in the Preview.
+The graphs are the source: `graphs/main.yml` (the director, the stage, the HUD and the master bus),
+`graphs/worlds/*.yml` (one subgraph per world), and `graphs/worlds/lib/` (a plucked voice used 5× and an echo +
+hall used 3×).
 
-   ```bash
-   halugraph .            # run inside this folder — or: halugraph /path/to/this/folder
-   ```
+## Open it on halugraph.com
 
-2. **Start the agent.** In the editor, **Start agent** (Agent panel or status bar) opens a terminal tab
-   running Claude Code or Codex for you. Or start it yourself in a second terminal, in this folder:
+[halugraph.com](https://halugraph.com) runs halugraph for you: the editor, your own workspace with the agent,
+and the previews, all in the browser.
 
-   ```bash
-   claude          # or: codex
-   ```
+1. **Sign in** at https://halugraph.com and you land on your dashboard.
+2. **Make the project.** Either:
+   * **New project** → template **haluworld**. The dashboard copies this repository into your workspace as a
+     new project, with its history and without a remote. Or:
+   * open any of your projects, open a terminal tab (`` Ctrl+Shift+` ``) and clone it yourself:
 
-   and tell it: **Read AGENTS.md and strictly follow it.**
-   The agent then waits for work; its status shows in the editor (bottom bar and Agent panel). You
-   don't need to watch its terminal. The first time, Claude Code and Codex ask whether you trust this
-   folder — answer yes: that turns on this folder's settings (`.claude/`, `.codex/`, `.mcp.json`), which let
-   the agent reach halugraph directly.
+     ```bash
+     git clone https://github.com/halugraph/haluworld.git ~/projects/haluworld
+     git -C ~/projects/haluworld remote remove origin
+     ```
 
-3. **Patch → save → compile.** Edit a graph, press **Ctrl+S** to save (every save is a git commit you
-   can go back to), press **F5** to compile. The result appears in the **Preview** panel and at
-   `http://127.0.0.1:4748/preview/latest/` (previews run on their own port, next to the editor's).
+     Every folder in `~/projects` with a `.hlg` file shows up on the dashboard (reload it).
+3. **Open it**: `https://halugraph.com/<your login>/haluworld/`.
+4. **Start the agent**: **Start agent** (Agent panel or status bar) → **Claude Code** or **Codex**. The first
+   time, you sign in to your own account in that terminal tab: Claude Code prints a link to open, and Codex
+   needs `codex login --device-auth`. The sign-in stays in your workspace.
+5. **Compile**: press **F5**. The agent writes the app from the graphs. The first compile of this project
+   takes a while: four worlds, two shaders, four three.js scenes. The **Preview** panel shows the result
+   and reloads after every compile.
+6. **Click into the preview once**: browsers start sound only after a click or tap. The preview's address (URL
+   bar of the Preview panel) works on your phone too. It is a private link: whoever has it can open your
+   builds while the project is open.
 
-New to halugraph? Help → Tutorial in the editor walks you through your first patch.
-`graphs/examples/hello-button.yml` is the small reference patch the compile process imitates.
+**Change it**: edit a node's text in the Inspector, rewire, add a world, then **Ctrl+S** (every save is a git
+commit) and **F5**. Or ask the agent in the Agent panel ("make Aurora's pad warmer", "add a fifth world").
+
+**Keep it on GitHub**: create an empty repository, press **Push** and paste its address. The first time, set up
+your git sign-in in a terminal tab: a personal access token, or an SSH key. halugraph's **Help → Documentation →
+halugraph.com** says how.
+
+## Run it on your own computer
+
+You need Node.js 22 or newer, git, Python 3.8 or newer, halugraph, and Claude Code or Codex.
+
+```bash
+git clone https://github.com/halugraph/haluworld.git haluworld
+halugraph haluworld        # opens the editor at http://127.0.0.1:4747/
+```
+
+Then **Start agent** in the editor, or run `claude` (or `codex`) in the folder yourself and tell it **Read
+AGENTS.md and strictly follow it.** The first time, answer *yes* when it asks whether you trust this folder:
+that turns on the folder's settings (`.claude/`, `.codex/`, `.mcp.json`). Press **F5** to compile; the app
+appears in the Preview panel and at `http://127.0.0.1:4748/preview/latest/`.
 
 ## Where things are
 

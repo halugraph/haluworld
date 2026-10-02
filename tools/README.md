@@ -12,6 +12,7 @@ name in `tools/doc/`:
 | `tools/cmd/<name>` | `tools/doc/<name>.md` |
 | `tools/cmd/halugraph-client` | `tools/doc/halugraph-client.md` |
 | `tools/cmd/halugraph-mcp.mjs` | `tools/doc/halugraph-mcp.md` (a file extension is not part of the name) |
+| `tools/cmd/halugraph-picture.mjs` | `tools/doc/halugraph-picture.md` |
 
 A tool may also have a `tools/cmd/<name>.cmd` next to it: the same tool for cmd.exe / PowerShell on
 Windows (documented in the same `tools/doc/<name>.md`). In a POSIX shell — including **Git Bash**, Claude
@@ -29,6 +30,7 @@ Code's Bash tool on Windows — always run `tools/cmd/<name>` itself.
 | tool | what it does |
 |---|---|
 | [`halugraph-client`](doc/halugraph-client.md) | talks to the running halugraph server: receive events (`wait`), report compile progress, ask the user questions, show notifications/statuses, report problems, read graphs and node types. Python ≥ 3.8, standard library only; it finds a working python by itself (`python3`, `python` or `py -3`). |
+| [`halugraph-picture`](doc/halugraph-picture.md) | the pictures of an app's link preview (the App node, `nodes/output.yaml`): `node tools/cmd/halugraph-picture.mjs app <id>` screenshots the build into `public/og-image.png`, `icon <id>` turns `public/icon.svg` into `apple-touch-icon.png`. Needs `playwright` on the PATH; without it, skip the picture — never install anything for it. Node, no dependencies. |
 | [`halugraph-mcp`](doc/halugraph-mcp.md) | the same protocol as MCP tools: halugraph's MCP server for this project. Claude Code and Codex start it themselves (`.mcp.json`, `.codex/config.toml`) — you never run it; you call its tools (AGENTS.md §13). Node, no dependencies. |
 
 ## Adding a tool
@@ -42,5 +44,5 @@ If you (the agent) write a helper worth keeping for future compiles:
    flags, examples with output, exit codes.
 3. Mention it in `agents/memory.md` so that you remember it next time.
 
-Do not modify `tools/cmd/halugraph-client` or `tools/cmd/halugraph-mcp.mjs`. They ship with halugraph and
+Do not modify `tools/cmd/halugraph-client`, `tools/cmd/halugraph-mcp.mjs` or `tools/cmd/halugraph-picture.mjs`. They ship with halugraph and
 their documentation must stay accurate. If one misbehaves, tell the user.

@@ -69,6 +69,31 @@ body {
   min-height: 100dvh;
 }
 
+/*
+ * The static header of index.html (the page's one <h1> and its description, for search engines, link
+ * previews and screen readers). With JavaScript (the `hlg-js` class, set by index.html's first script before
+ * anything paints) it is visually hidden from the first frame: never display:none, never shown and then
+ * removed — no flicker. Without JavaScript it is a plain readable page.
+ */
+.hlg-seo {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: clamp(16px, 4vw, 40px) clamp(16px, 4vw, 40px) 0;
+}
+
+.hlg-js .hlg-seo {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

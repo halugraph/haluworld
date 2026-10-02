@@ -4,7 +4,7 @@
 `src/nodes/`) and the agent adds one TypeScript module per graph node plus a wiring file per graph.
 
 ```
-index.html            mounts <div id="app">, loads src/main.ts
+index.html            the hlg-js script first (no flicker), the static hlg-seo header (one <h1>), <div id="app">, loads src/main.ts
 vite.config.ts        base './' (the app works under /preview/<id>/); no imports needed
 tsconfig.json         strict type check of src/ (noEmit, verbatimModuleSyntax, .ts import extensions)
 package.json          private ESM package; scripts dev / typecheck / build; list extra libraries under "dependencies"
@@ -30,6 +30,36 @@ node agents/compiles/node_modules/vite/bin/vite.js build agents/compiles/<id>/ap
 Vite does not check types; `tsc` does (no output = no errors). A dev server for experiments (hot
 reload re-runs `main.ts`; it keeps running, so start it in the background and stop it when done):
 `node agents/compiles/node_modules/vite/bin/vite.js agents/compiles/<id>/app`.
+
+## Link previews and search engines
+
+`index.html` carries what link previews and search engines read (the App node, `nodes/output.yaml`): the
+sharing tags in `<head>`, and the page's one `<h1>` and description in a static `<header class="hlg-seo">`
+before `<div id="app">`. That header is hidden from the first frame while the app runs — no flicker — by two
+pieces. An app seeded from before them lacks both: add them as they are here.
+
+The first script of `index.html`, right after `<meta charset="UTF-8" />`:
+
+```html
+<script>document.documentElement.classList.add('hlg-js')</script>
+```
+
+The rule in `src/style.css` (visually hidden, never `display: none`: crawlers and screen readers keep it):
+
+```css
+.hlg-js .hlg-seo {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+```
 
 ---
 

@@ -426,4 +426,8 @@ nodes:
         connection: title.text
       - name: style
         connection: ""
+      - name: url
+        connection: ""
+      - name: description
+        connection: ""
     outputs: []

@@ -180,7 +180,7 @@ The graph is the program and the action texts are its source code — review the
 | `agents/notes/` | you | notes, research, pending questions |
 | `agents/tmp/` | you | scratch space (git-ignored) |
 | `process/` | halugraph template | read and follow; change only when the user asks |
-| `tools/cmd/halugraph-client`, `tools/cmd/halugraph-mcp.mjs` and their docs | halugraph | use; never modify |
+| `tools/cmd/halugraph-client`, `halugraph-mcp.mjs`, `halugraph-picture.mjs` and their docs | halugraph | use; never modify |
 | other `tools/cmd/<name>` + `tools/doc/<name>.md` | you | helper tools worth keeping, following `tools/README.md` |
 | `util/` | halugraph server | never touch |
 

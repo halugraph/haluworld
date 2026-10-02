@@ -2,11 +2,19 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- before anything paints: CSS can tell JavaScript is on from the first frame (no flicker) -->
+    <script>document.documentElement.classList.add('hlg-js')</script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="color-scheme" content="dark light" />
     <title>halugraph app</title>
   </head>
   <body>
+    <!-- what search engines and link previews read: static, outside #app (the app never touches it);
+         visually hidden once JavaScript runs (style.css: .hlg-js .hlg-seo), a readable page without it -->
+    <header class="hlg-seo">
+      <h1>halugraph app</h1>
+      <p>A web app made with halugraph.</p>
+    </header>
     <div id="app"></div>
     <noscript>This app needs JavaScript.</noscript>
     <script type="module" src="/src/main.ts"></script>

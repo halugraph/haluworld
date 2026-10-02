@@ -5,10 +5,12 @@ icon: web
 function: |
   The root of the compiled app. Its `action` describes the WHOLE application: what it is, its mood,
   layout, colours, typography and anything global (full-screen canvas, dark theme, "works on phones").
-  Everything wired into `content` becomes the page, in wire order. A graph needs exactly one output
-  node to be compiled as an app; graphs used as subgraphs have none.
+  Everything wired into `content` becomes the page, in wire order. It also decides how the app presents
+  itself when someone shares its link: the page's description, the link preview (Open Graph and Twitter
+  card: title, text and a picture) and the icons. A graph needs exactly one output node to be compiled as an
+  app; graphs used as subgraphs have none.
 approach: |
-  Module `src/nodes/<graph>/<id>.ts` creates a root element (`<main class="hlg-output">`), keeps
+  Module `src/nodes/<graph>/<nodeId>.ts` creates a root element (`<main class="hlg-output">`), keeps
   incoming `content` values in an array indexed by `info.slot` (the wire order) and re-renders with
   `root.replaceChildren(...)` whenever one arrives. It mounts the root with `ctx.app.mount(root)` in
   `start()` and unmounts in `dispose()`.
@@ -18,6 +20,7 @@ approach: |
   - `style` accepts CSS text (inserted as a `<style>` element) or an object of theme variables set
     on `<html>`: `{ accent: '#ff0', bg: '#000' }` → `--hlg-accent`, `--hlg-bg` (the variables of
     style.css); keys starting with `--` are used as they are. Remove both in `dispose()`.
+  - `url` and `description` are build-time inputs (they go into index.html, below): empty handlers.
   The reference attachments of this node (sketches, mock-ups, screenshots of apps the artist likes) are
   the visual design brief: look at every one before writing the page and follow its layout,
   proportions, colours and typography; the action and the attachment descriptions win where they
@@ -25,6 +28,65 @@ approach: |
   Layout comes from the action: default is a centred single column (`hlg-output--centered` when there
   are few elements, a responsive `hlg-grid` when there are many). Use the variables in style.css
   (`--hlg-accent`, `--hlg-bg`…) to theme instead of hard-coding colours all over the node modules.
+
+  Sharing — written into the `<head>` of `index.html` at build time, because link previews (chat apps,
+  social networks, search engines) read the static HTML and do not run JavaScript:
+  - `<title>`, `<meta name="description">` (the `description` input, else one sentence written from the
+    action), `<meta name="theme-color">` (the app's background or accent colour).
+  - Open Graph as `<meta property="og:…">`: `og:type` = `website`, `og:site_name` and `og:title` = the app's
+    name, `og:description`, `og:url`; Twitter as `<meta name="twitter:…">`: `twitter:card`, `twitter:title`,
+    `twitter:description`.
+  - `public/icon.svg`, always: write it as text, the app's colours on its own background;
+    `<link rel="icon" type="image/svg+xml" href="./icon.svg">`.
+  - The pictures, taken after a good build (process/compile.md Step 11) by
+    `node tools/cmd/halugraph-picture.mjs app <id>` (the page → `public/og-image.png`, 1200 × 630) and
+    `… icon <id>` (icon.svg → `public/apple-touch-icon.png`, 180 × 180) — each only when its source changed
+    (the page: this node or a node wired into `content` was regenerated; icon.svg) or the app has none; else
+    keep the seeded files. An embedded picture of this node (role embed) replaces the screenshot as it is:
+    `og:image` = `assets/<nodeId>/<file name>` (Step 7 copies it), with the attachment's `width`, `height` and
+    `mime`; no conversion. After `app`, open the PNG (Read): the start overlay ("click to start"), an error
+    banner or a blank page → `node tools/cmd/halugraph-picture.mjs remove <id>` (no picture). Exit code not 0
+    (no playwright or browser, a timeout…): no new picture, a seeded one stays. Never install tools and never
+    ask for permission for this: skip it instead.
+  - With a picture: `og:image` (+ `og:image:width`, `og:image:height`, `og:image:type`, `og:image:alt`),
+    `twitter:card` = `summary_large_image`, `twitter:image`, `twitter:image:alt`; the touch icon only when its
+    file is there (`<link rel="apple-touch-icon" href="./apple-touch-icon.png">`). Without one: none of these,
+    and `twitter:card` = `summary`.
+  - The address — `og:url`, `<link rel="canonical">` and the absolute picture URLs (`<address>og-image.png`:
+    link previews need absolute ones) — ends with `/` (add it): the `url` input (its constant value); else an
+    address the action names; else `hosted.publishUrl` of the project info (`tools/cmd/halugraph-client info`,
+    MCP: `project_info`), set once Publish is available on halugraph.com; else none: relative picture URLs, no
+    `og:url`, no canonical link. The input beats the action: when they differ, report a `contradiction`
+    (warning) and use the input.
+  - No address: report it once per project — unless `agents/memory.md` notes it was reported; then note it
+    there: `tools/cmd/halugraph-client error "No public address for the link preview: wire the app's public address into the App node's url input" --severity info --code suggestion --graph <graph> --node <nodeId> --port url --side input --compile <id>`
+    — when the project info has `hosted`, end the message with ", or publish the project on halugraph.com".
+  - The `title` input also sets `document.title` at run time; the static tags use its value when it is a
+    constant, else the action's name for the app.
+
+  Search engines — the same static `index.html`, written so that the first paint already looks final (no
+  flicker of search-engine text before the app appears):
+  - `<html lang>` = the language of the app's texts. The page's one `<h1>` and a short description (the app's
+    name and what it does, from the action — honest, no keyword lists) live in `<header class="hlg-seo">`,
+    which the template places before `<div id="app">`, outside it: the app mounts into `#app`
+    and never removes, re-renders or hides that header. style.css shows it as a plain page without
+    JavaScript and visually hides it once the `hlg-js` class is set (never `display: none`), so crawlers and
+    screen readers keep it.
+  - The `hlg-js` class comes from index.html's first script, right after `<meta charset>`
+    (`document.documentElement.classList.add('hlg-js')`): it runs before the first paint, so every CSS rule
+    that depends on JavaScript is right from the first frame. Keep it first; the app's module script and
+    stylesheet stay where Vite puts them (in the head, the stylesheet render-blocking). A seeded app made
+    before this lacks both: add the script right after `<meta charset>` and the `.hlg-js .hlg-seo` rule of
+    `process/templates/vite-app/README.md` to `src/style.css`.
+  - Everything visible before the app starts comes from CSS, never from JavaScript: the page background,
+    text colour and fonts (style.css variables), sizes reserved for canvases and media (no layout shift).
+    Nothing is shown first and then hidden, moved or replaced by the app.
+  - Structured data: one `<script type="application/ld+json">` with a schema.org `WebApplication` (`name`,
+    `description`, `url` and `image` when the address is known, `applicationCategory`, `operatingSystem`
+    "Any", `browserRequirements` "Requires JavaScript").
+  - In the app itself: real headings and text where the design has them, `alt` on images, an `aria-label`
+    (and `role="img"`) on canvases that show something meaningful, buttons as `<button>`.
+  - No `robots.txt` or `sitemap.xml`: they count only at a host's root, which halugraph.com's Publish runs.
 deliverables: |
   - A mounted page containing every `content` element in wire order, laid out as the action says.
   - `document.title` set from `title` (or from the action / graph description when unwired).
@@ -32,6 +94,12 @@ deliverables: |
     and light mode, no horizontal scrolling unless the action asks for it.
   - When the graph has no content at all: a tasteful placeholder page that shows the title and one
     sentence taken from the action, so the build is never blank.
+  - `index.html` with `lang`, the `hlg-js` script first, the `hlg-seo` header (the one `<h1>` and the
+    description) outside `#app`, and the JSON-LD; nothing flickers between the first paint and the app.
+  - `index.html` with the sharing tags above (absolute URLs when an address is known) and `public/icon.svg`;
+    `public/og-image.png` (1200 × 630) and `apple-touch-icon.png` where the helper could take them (or the
+    embedded picture); plan.md names the address used and where it came from (`url` input, the action, the
+    publish URL, or none).
 preconditions: |
   - Exactly one output node per compiled graph (none in graphs used as subgraphs).
   - `content` should receive DOM elements (the `element` outputs of ui/*, media/*, graphics/* nodes).
@@ -39,6 +107,8 @@ preconditions: |
     how to show them — report it as a warning and render a readable fallback.
   - Nodes that make sound or visuals without an element (audio/dac, input/*) do not need to be wired
     here; they still run because the whole graph is instantiated.
+  - `url` must be an absolute `https://` (or `http://`) address; anything else is reported as a warning and
+    ignored (the next address in line is used).
 inputs:
   - name: content
     description: DOM elements that make up the page (fan-in; wire order = page order)
@@ -46,6 +116,10 @@ inputs:
     description: Page title text (document.title)
   - name: style
     description: CSS text, or theme variables such as { accent, bg } (→ --hlg-accent, --hlg-bg)
+  - name: url
+    description: The app's public address for link previews (og:url, canonical) — default the project's publish URL
+  - name: description
+    description: One sentence for link previews and search results — default written from the action
 outputs: []
 attachments:
   role: reference

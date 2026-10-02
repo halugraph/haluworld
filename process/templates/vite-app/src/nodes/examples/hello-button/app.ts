@@ -5,12 +5,13 @@
  * action          A tiny page titled “Hello button”: the button and the click counter, centred on a dark background
  *
  * Ports: in content (elements, fan-in in wire order), title (text), style (CSS text, or theme
- *        variables { accent: '#f0a' } → --hlg-accent on the page root)
+ *        variables { accent: '#f0a' } → --hlg-accent on the page root), url and description
+ *        (build-time: they go into index.html's link-preview tags, so their handlers do nothing)
  * The output node builds the page: it owns the root layout and mounts it into #app on start().
  */
 import { h, type NodeContext, type NodeInstance } from '../../../hlg-runtime.ts';
 
-type Inputs = { content: unknown; title: unknown; style: unknown };
+type Inputs = { content: unknown; title: unknown; style: unknown; url: unknown; description: unknown };
 
 export default function node_app(ctx: NodeContext): NodeInstance<Inputs> {
   const root = h('main', { class: 'hlg-output hlg-output--centered' });
@@ -50,6 +51,8 @@ export default function node_app(ctx: NodeContext): NodeInstance<Inputs> {
           }
         }
       },
+      url() {}, // build-time inputs: index.html carries them (the App node's approach)
+      description() {},
     },
     start() {
       document.head.appendChild(styleEl);

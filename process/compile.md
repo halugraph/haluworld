@@ -290,7 +290,11 @@ over it** — that would throw away its title, styles and dependencies.
 4. Write one module per node that needs one (§4) — seeded: only the new and changed ones, the reused
    modules stay as they are — then one wiring file per graph (entry + every subgraph; seeded too, always
    rewritten: it carries every wire and each node's meta, e.g. the new URL of a replaced embed), then update
-   `src/main.ts` (the `entry` import and the app `name`) and `index.html`'s `<title>`.
+   `src/main.ts` (the `entry` import and the app `name`) and `index.html`: `<title>`, the App node's sharing tags
+   and `public/icon.svg` (its approach in `nodes/output.yaml` says which, and which address), `lang`, the JSON-LD
+   and the static `hlg-seo` header (the page's `<h1>` and description). Keep the template's first `hlg-js`
+   script (no flicker); a seeded app without it gets it, and the `.hlg-js .hlg-seo` rule in `src/style.css`,
+   from `process/templates/vite-app/README.md`.
 5. Style: extend `src/style.css` for this app's look (the output node's action is the design brief,
    its reference attachments show it); prefer the CSS variables at the top of the file.
 
@@ -392,6 +396,10 @@ and fail (Step 12).
 
 ### Step 11 — Verify
 
+**App picture** (after a good build): when the App node's approach (`nodes/output.yaml`) asks for new
+pictures, run `node tools/cmd/halugraph-picture.mjs app <id>` (and `icon <id>`), look at the PNG and set the
+picture tags in `index.html` as it says, then run Step 9 again and judge `build.log` again. Then:
+
 ```bash
 ls agents/compiles/build/<id>/index.html
 grep -oE '(src|href)="[^"]*"' agents/compiles/build/<id>/index.html
@@ -400,8 +408,9 @@ ls agents/compiles/build/<id>/assets/<nodeId>/
 
 - The type check (Step 8) printed nothing, `agents/compiles/build/<id>/index.html` exists and the
   log shows `✓ built in`.
-- Every `src`/`href` in it is relative (`./assets/…`) — the app is served from `/preview/<id>/` and
-  `/preview/latest/`, never from `/`.
+- Every `src`/`href` in it is relative (`./assets/…`) — except `<link rel="canonical">`: the app is served
+  from `/preview/<id>/` and `/preview/latest/`, never from `/`. The canonical link and the `og:` / `twitter:`
+  URLs (`content=`) of the App node's link preview are absolute on purpose.
 - Self-check against the plan: every node with behaviour has a module, every wire of the graph has a
   `g.connect(…)` line (`grep -c "g.connect(" agents/compiles/<id>/app/src/graphs/<graph>.ts`), every
   `output.content` wire is in the page.

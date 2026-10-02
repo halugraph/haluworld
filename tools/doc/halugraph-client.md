@@ -700,6 +700,26 @@ tools/cmd/halugraph-client project
 }
 ```
 
+On halugraph.com the project info also has `hosted` (shortened here); its `publishUrl` — once Publish is
+available — is the app's public address, which the App node's link preview uses (`nodes/output.yaml`):
+
+```json
+{
+  "root": "/home/ada/projects/synth",
+  "hlg": { "halugraph": "0.1.0", "name": "synth", "description": "A reactive synth", "main": "main" },
+  "version": "0.1.0",
+  "hosted": {
+    "publicUrl": "https://halugraph.com/ada/synth/",
+    "basePath": "/ada/synth",
+    "login": "ada",
+    "project": "synth",
+    "dashboardUrl": "https://halugraph.com/ada/",
+    "version": "0.1.0",
+    "publishUrl": "https://ada.halugraph.cc/synth/"
+  }
+}
+```
+
 ### `ping` — is halugraph reachable?
 
 ```
